@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Homestead Idle</title>
+  <style>
+    :root{--bg:#0f172a;--panel:#111827;--muted:#94a3b8;--fg:#e5e7eb;--accent:#22c55e;--accent-2:#f59e0b;--danger:#ef4444}
+    *{box-sizing:border-box}html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,#0b1223,#0f172a 40%,#0b1223);color:var(--fg);font:16px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    .wrap{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-columns: 320px 1fr;gap:18px}
+    header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+    h1{font-size:24px;margin:0;font-weight:700;letter-spacing:.3px}
+    .badge{font-size:12px;padding:3px 8px;border-radius:999px;background:#1f2937;color:#cbd5e1;border:1px solid #334155}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap}
+    .tab{border:1px solid #334155;background:#0b1223;color:var(--fg);padding:8px 12px;border-radius:10px;cursor:pointer}
+    .tab.active{background:#122041;border-color:#475569}
+    .panel{background:rgba(17,24,39,.85);backdrop-filter: blur(6px);border:1px solid #1f2937;border-radius:14px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
+    .left{padding:14px}.right{display:grid;gap:18px}
+    .section{padding:14px}.section h2{margin:0 0 10px 0;font-size:18px}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    .row.stack{flex-direction:column;align-items:stretch}
+    button{appearance:none;border:1px solid #334155;background:#0b1223;color:var(--fg);padding:10px 12px;border-radius:10px;cursor:pointer;transition:.15s transform,.15s background,.15s border-color;font-weight:600;min-height:40px}
+    button:hover{transform:translateY(-1px);border-color:#475569;background:#0d1426}
+    button.primary{background:linear-gradient(180deg,#1b3f2a,#07250f);border-color:#1f8a4c}
+    button.primary:hover{background:linear-gradient(180deg,#215836,#0c3a1b)}
+    button.warn{border-color:#7c2d12;background:#22140a}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    select{background:#0b1223;border:1px solid #334155;color:var(--fg);padding:9px 10px;border-radius:10px;min-height:40px}
+    .grid{display:grid;grid-template-columns: repeat(auto-fit,minmax(200px,1fr));gap:12px}
+    .card{background:#0b1223;border:1px solid #1f2937;border-radius:12px;padding:12px}
+    .card h3{margin:0 0 8px 0;font-size:16px}
+    .res{display:flex;flex-wrap:wrap;gap:8px}
+    .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid #1f2937;background:#0b1223;padding:6px 8px;border-radius:999px}
+    .qty{font-variant-numeric:tabular-nums}.small{font-size:12px;color:var(--muted)}
+    .log{height:auto;max-height:28vh;overflow:auto;background:#050a16;border:1px solid #1f2937;border-radius:10px;padding:10px;font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:12px}
+    .progress{height:8px;background:#0b1223;border-radius:6px;border:1px solid #1f2937;overflow:hidden}
+    .bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:0%}
+    .kpi{display:grid;grid-template-columns:1fr;gap:12px}
+    .center{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .cluster{display:flex;flex-wrap:wrap;gap:6px}
+    .hidden{display:none}
+    .actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;min-width:260px}
+    .actions button{width:100%}
+    @media (max-width: 900px){.wrap{grid-template-columns: 1fr}.left{order:2}.right{order:1}.log{max-height:36vh}}
+    @media (max-width: 520px){body{font-size:15px}.wrap{padding:12px}button{padding:9px 10px}.row{gap:6px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Homestead Idle <span class="badge" id="version">v1.6</span></h1>
+      <div class="actions">
+        <button id="saveBtn">Opslaan</button>
+        <button id="exportBtn">Export</button>
+        <button id="importBtn">Import</button>
+        <button id="resetBtn" class="warn">Reset</button>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="game" id="tabGame">Spel</button>
+        <button class="tab" data-tab="market" id="tabMarket">Markt</button>
+      </div>
+    </header>
+
+    <aside class="panel left">
+      <h2>Voorraad</h2>
+      <div class="res" id="resources"></div>
+      <div style="margin:10px 0 4px" class="small">Zaden op voorraad</div>
+      <div class="cluster small" id="seedList"></div>
+      <div style="margin:10px 0 4px" class="small">Oogst op voorraad</div>
+      <div class="cluster small" id="cropList"></div>
+    </aside>
+
+    <main class="right">
+      <!-- ==== GAME TAB CONTENT ==== -->
+      <section class="panel section tabview" id="viewGame">
+        <h2>Acties & Vervaardigen</h2>
+        <div class="kpi">
+          <div class="card">
+            <div class="center"><strong>Hout kappen</strong> <span class="small" id="axeStatus">geen bijl</span></div>
+            <div class="progress"><div id="chopBar" class="bar"></div></div>
+            <button id="chopBtn" class="primary">Zoek/kappen (⏲︎ 5s)</button>
+          </div>
+          <div class="card">
+            <div class="center"><strong>Zoek rond</strong> <span class="small">oppervlakte</span></div>
+            <div class="progress"><div id="forageBar" class="bar"></div></div>
+            <button id="forageBtn" class="primary">Zoek rond (⏲︎ 6s)</button>
+          </div>
+          <div class="card">
+            <div class="center"><strong>Moestuin</strong> <span class="small" id="gardenStatus">onbewerkt</span></div>
+            <div class="progress"><div id="gardenBar" class="bar"></div></div>
+            <div class="row stack">
+              <div class="row">
+                <select id="seedSelect"><option value="" disabled selected>Kies zaad…</option></select>
+                <button id="tillBtn">Spitten (⏲︎ 4s)</button>
+                <button id="plantBtn">Zaaien (⏲︎ 3s, kost 1)</button>
+              </div>
+              <button id="harvestBtn" disabled>Oogsten</button>
+            </div>
+            <p class="small" id="veggiesReadyLine">Groei: 0%</p>
+          </div>
+        </div>
+
+        <section class="section">
+          <h2>Vervaardigen & Gebouwen</h2>
+          <div class="grid">
+            <div class="card">
+              <h3>Gereedschap</h3>
+              <div class="row">
+                <button id="craftAxeBtn">Maak bijl (15 hout)</button>
+                <button id="craftHoeBtn">Maak schoffel (10 hout)</button>
+              </div>
+            </div>
+            <div class="card">
+              <h3>Gebouwen</h3>
+              <div class="row">
+                <button id="buildShedBtn">Bouw schuurtje (50 hout)</button>
+                <button id="buildHouseBtn">Zet huis op (150 hout)</button>
+              </div>
+            </div>
+            <div class="card">
+              <h3>Passief inkomen</h3>
+              <ul class="small" id="passiveList"></ul>
+            </div>
+            <div class="card">
+              <h3>Spelinstellingen</h3>
+              <div class="row">
+                <label class="small"><input id="autosaveToggle" type="checkbox" checked> Autosave elke 10s</label>
+                <label class="small"><input id="muteToggle" type="checkbox"> Geluid uit</label>
+              </div>
+              <p class="small" id="saveInfo">Laatste save: –</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel section">
+          <h2>Dagboek</h2>
+          <div id="log" class="log"></div>
+        </section>
+      </section>
+
+      <!-- ==== MARKET TAB CONTENT ==== -->
+      <section class="panel section tabview hidden" id="viewMarket">
+        <h2>Markt</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Verkoop</h3>
+            <div class="row stack">
+              <div class="row"><button id="sellWoodBtn">Verkoop 10 hout → +5💰</button></div>
+              <div class="row"><button id="sellStoneBtn">Verkoop 5 steen → +7💰</button></div>
+              <div class="row"><button id="sellVegBtn">Verkoop 5 groenten → +10💰</button></div>
+              <div class="row"><button id="sellEggBtn">Verkoop 5 eieren → +8💰</button></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Shop</h3>
+            <p class="small">Binnenkort: koop zeldzame zaden en upgrades met 💰 munten.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+  (function(){
+    const VERSION = '1.6.0';
+    const SAVE_KEY = 'homestead-save-v1';
+
+    // ===== Zaadcatalogus (30 soorten)
+    const SEEDS = [
+      {id:'basic',   icon:'🌱', name:'Basiszaad', crop:'Groente', yield:[4,6], grow:20},
+      {id:'onion',   icon:'🧅', name:'Uienzaad', crop:'Uien', yield:[3,5], grow:22},
+      {id:'pumpkin', icon:'🎃', name:'Pompoenzaad', crop:'Pompoenen', yield:[2,3], grow:28},
+      {id:'carrot',  icon:'🥕', name:'Wortelzaad', crop:'Wortels', yield:[4,7], grow:20},
+      {id:'potato',  icon:'🥔', name:'Aardappelzaad', crop:'Aardappelen', yield:[3,6], grow:22},
+      {id:'wheat',   icon:'🌾', name:'Tarwezaad', crop:'Tarwe', yield:[5,9], grow:24},
+      {id:'corn',    icon:'🌽', name:'Maïszaad', crop:'Maïs', yield:[3,5], grow:24},
+      {id:'tomato',  icon:'🍅', name:'Tomatenzaad', crop:'Tomaten', yield:[4,7], grow:23},
+      {id:'lettuce', icon:'🥬', name:'Sla-zaad', crop:'Sla', yield:[4,8], grow:18},
+      {id:'cabbage', icon:'🥬', name:'Koolzaad', crop:'Kool', yield:[2,4], grow:26},
+      {id:'beet',    icon:'🫐', name:'Bietenzaad', crop:'Bieten', yield:[4,6], grow:21},
+      {id:'radish',  icon:'🍥', name:'Radijszaad', crop:'Radijs', yield:[5,9], grow:17},
+      {id:'pepper',  icon:'🌶️', name:'Paprikazaad', crop:'Paprika', yield:[3,6], grow:25},
+      {id:'cucumber',icon:'🥒', name:'Komkommerzaad', crop:'Komkommers', yield:[3,5], grow:23},
+      {id:'garlic',  icon:'🧄', name:'Knoflookteentje', crop:'Knoflook', yield:[3,6], grow:24},
+      {id:'leek',    icon:'🥬', name:'Preizaad', crop:'Prei', yield:[3,5], grow:24},
+      {id:'pea',     icon:'🟢', name:'Erwtzaad', crop:'Erwten', yield:[6,10], grow:19},
+      {id:'bean',    icon:'🫘', name:'Bonenzaad', crop:'Bonen', yield:[6,10], grow:21},
+      {id:'spinach', icon:'🥬', name:'Spinaziezaad', crop:'Spinazie', yield:[5,9], grow:16},
+      {id:'broccoli',icon:'🥦', name:'Broccolizaad', crop:'Broccoli', yield:[2,4], grow:26},
+      {id:'cauli',   icon:'🥦', name:'Bloemkoolzaad', crop:'Bloemkool', yield:[2,4], grow:27},
+      {id:'chili',   icon:'🌶️', name:'Chilizaad', crop:'Chili', yield:[3,6], grow:24},
+      {id:'eggplant',icon:'🍆', name:'Auberginezaad', crop:'Aubergines', yield:[3,5], grow:25},
+      {id:'melon',   icon:'🍈', name:'Meloenzaad', crop:'Meloenen', yield:[1,2], grow:30},
+      {id:'straw',   icon:'🍓', name:'Aardbeienzaad', crop:'Aardbeien', yield:[3,6], grow:24},
+      {id:'blue',    icon:'🫐', name:'Blauwebessen-zaad', crop:'Blauwe bessen', yield:[2,4], grow:28},
+      {id:'rasp',    icon:'🍇', name:'Frambozen-zaad', crop:'Frambozen', yield:[2,4], grow:28},
+      {id:'basil',   icon:'🌿', name:'Basilicumzaad', crop:'Basilicum', yield:[5,9], grow:16},
+      {id:'sunflower',icon:'🌻',name:'Zonnebloemzaad', crop:'Zonnebloemen', yield:[1,3], grow:27},
+      {id:'barley',  icon:'🌾', name:'Gerstzaad', crop:'Gerst', yield:[5,9], grow:24},
+    ];
+    const SEED_BY_ID = Object.fromEntries(SEEDS.map(s=>[s.id,s]));
+
+    // Safe DOM getter
+    var el = window.__homesteadEl || (window.__homesteadEl = (id)=>document.getElementById(id));
+
+    const $ = {
+      version: el('version'), resources: el('resources'), log: el('log'), seedList: el('seedList'), cropList: el('cropList'),
+      // tabs
+      tabGame: el('tabGame'), tabMarket: el('tabMarket'), viewGame: el('viewGame'), viewMarket: el('viewMarket'),
+      // wood/forage/garden
+      chopBtn: el('chopBtn'), chopBar: el('chopBar'), axeStatus: el('axeStatus'),
+      forageBtn: el('forageBtn'), forageBar: el('forageBar'),
+      seedSelect: el('seedSelect'), tillBtn: el('tillBtn'), plantBtn: el('plantBtn'), harvestBtn: el('harvestBtn'), gardenBar: el('gardenBar'), gardenStatus: el('gardenStatus'), veggiesReadyLine: el('veggiesReadyLine'),
+      // market buttons
+      sellWoodBtn: el('sellWoodBtn'), sellStoneBtn: el('sellStoneBtn'), sellVegBtn: el('sellVegBtn'), sellEggBtn: el('sellEggBtn'),
+      // crafting/buildings
+      craftAxeBtn: el('craftAxeBtn'), craftHoeBtn: el('craftHoeBtn'), buildShedBtn: el('buildShedBtn'), buildHouseBtn: el('buildHouseBtn'),
+      passiveList: el('passiveList'),
+      // settings
+      saveBtn: el('saveBtn'), exportBtn: el('exportBtn'), importBtn: el('importBtn'), resetBtn: el('resetBtn'), autosaveToggle: el('autosaveToggle'), muteToggle: el('muteToggle'), saveInfo: el('saveInfo'),
+    };
+
+    const state = {
+      resources: {
+        wood: 0, stone: 0, veggies: 0, eggs: 0, gold: 0,
+        seeds: {},            // {id: qty}
+        crops: {},            // {id: qty}
+        tools: { axe:false, hoe:false } // pick verwijderd
+      },
+      garden: { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20 },
+      animals: { chickens: 0, eggsReady: 0 },
+      buildings: { shed:false, house:false },
+      meta: { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, log: [] }
+    };
+
+    // Helpers
+    function log(msg){ const time = new Date().toLocaleTimeString(); state.meta.log.unshift(`[${time}] ${msg}`); state.meta.log = state.meta.log.slice(0,200); $.log.innerHTML = state.meta.log.map(l=>`<div>${escapeHtml(l)}</div>`).join(''); $.log.scrollTop = 0; }
+    function escapeHtml(s){return s? s.replace(/[&<>\"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])):''}
+    const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+    const fmt=(n)=>Math.floor(n).toLocaleString('nl-NL');
+
+    function listPills(obj, dict, target){ const items = Object.entries(obj||{}).filter(([,q])=>q>0).sort((a,b)=>b[1]-a[1]); target.innerHTML = items.length? items.map(([id,q])=>{ const meta = dict[id] || {icon:'🌱', name:id}; return `<span class="pill">${meta.icon} ${escapeHtml(meta.name)}: <strong class="qty">${fmt(q)}</strong></span>`; }).join('') : '<span class="small">—</span>'; }
+    function renderSeedSelect(){ const owned = Object.entries(state.resources.seeds||{}).filter(([,q])=>q>0); const current = $.seedSelect.value; $.seedSelect.innerHTML = '<option value="" disabled selected>Kies zaad…</option>' + owned.map(([id,q])=>{const s=SEED_BY_ID[id]; if(!s) return ''; return `<option value="${id}">${s.icon} ${escapeHtml(s.name)} (x${q})</option>`}).join(''); if(current && state.resources.seeds[current]>0) $.seedSelect.value = current; }
+
+    function render(){
+      const r = state.resources, g = state.garden;
+      $.resources.innerHTML = `
+        <span class="pill">💰 Munten: <strong class="qty">${fmt(r.gold)}</strong></span>
+        <span class="pill">🌲 Hout: <strong class="qty">${fmt(r.wood)}</strong></span>
+        <span class="pill">🪨 Steen: <strong class="qty">${fmt(r.stone)}</strong></span>
+        <span class="pill">🥚 Eieren: <strong class="qty">${fmt(r.eggs)}</strong></span>
+        <span class="pill">🪓 Bijl: <strong>${r.tools.axe? 'ja':'nee'}</strong></span>
+        <span class="pill">🧹 Schoffel: <strong>${r.tools.hoe? 'ja':'nee'}</strong></span>
+        <span class="pill">🏚️ Schuur: <strong>${state.buildings.shed?'ja':'nee'}</strong></span>
+        <span class="pill">🏠 Huis: <strong>${state.buildings.house?'ja':'nee'}</strong></span>`;
+
+      listPills(r.seeds, SEED_BY_ID, $.seedList);
+      const CROPS = Object.fromEntries(SEEDS.map(s=>[s.id,{icon:s.icon, name:s.crop}]));
+      listPills(r.crops, CROPS, $.cropList);
+
+      $.axeStatus.textContent = r.tools.axe? 'bijl klaar' : 'geen bijl';
+      $.gardenStatus.textContent = g.planted? `${(SEED_BY_ID[g.plantId]||{name:'Gewas'}).name} groeit…` : (g.tilled? 'klaar om te zaaien' : 'onbewerkt');
+      $.veggiesReadyLine.textContent = 'Groei: ' + (g.planted? Math.floor(g.growProgress*100) : 0) + '%';
+
+      $.harvestBtn.disabled = !(g.planted && g.growProgress>=1);
+      $.plantBtn.disabled = !g.tilled;
+
+      renderSeedSelect();
+
+      const passive = [];
+      if(state.buildings.shed) passive.push('Schuur: +10% hout uit hakken');
+      if(state.buildings.house) passive.push('Huis: +1 groente/30s (tuinperk)');
+      if(state.animals.chickens>0) passive.push(`${state.animals.chickens} kippen: 1 ei/kip/60s`);
+      $.passiveList.innerHTML = passive.length? passive.map(x=>`<li>${x}</li>`).join('') : '<li class="small">Nog geen passieve productie</li>';
+
+      $.saveInfo.textContent = state.meta.lastSave? `Laatste save: ${new Date(state.meta.lastSave).toLocaleTimeString()}` : 'Nog niet opgeslagen';
+    }
+
+    const timers = { chop:0, forage:0, gardenTask:0 };
+
+    function tick(dt){
+      if(state.garden.planted){ state.garden.growProgress = clamp(state.garden.growProgress + dt/state.garden.growTime, 0, 1); $.gardenBar.style.width = (state.garden.growProgress*100).toFixed(1)+'%'; }
+      if(state.animals.chickens>0){ state.animals.eggsReady += dt * (state.animals.chickens / 60); }
+      if(state.buildings.house){ state.resources.veggies += dt/30; }
+      render();
+    }
+
+    function loop(){
+      const now = Date.now(); const dt = (now - state.meta.lastTick)/1000; state.meta.lastTick = now;
+      if(timers.chop>0){ timers.chop = clamp(timers.chop - dt,0,999); $.chopBar.style.width = ((1 - timers.chop/5)*100).toFixed(1)+'%'; if(timers.chop===0){ const base = state.resources.tools.axe? 8 : 3; const bonus = state.buildings.shed? base*0.1:0; const gained = Math.round(base+bonus); state.resources.wood += gained; log(`🌲 Je vond hout (+${gained}).`);} } else $.chopBar.style.width='0%';
+      if(timers.forage>0){ timers.forage = clamp(timers.forage - dt,0,999); $.forageBar.style.width = ((1 - timers.forage/6)*100).toFixed(1)+'%'; if(timers.forage===0){ const roll = Math.random(); if(roll < 0.30){ state.resources.stone += 1; log('🪨 Je vindt een losse steen (+1).'); } else if(roll < 0.60){ const w=1+Math.floor(Math.random()*2); state.resources.wood += w; log(`🌲 Je raapt losse takken (+${w} hout).`); } else if(roll < 0.90){ const s = SEEDS[Math.floor(Math.random()*SEEDS.length)]; state.resources.seeds[s.id]=(state.resources.seeds[s.id]||0)+1; log(`${s.icon} Je vindt ${s.name.toLowerCase()} (+1).`); } else { log('Je zoekt rond maar vindt niets.'); } } } else $.forageBar.style.width='0%';
+      tick(dt);
+      requestAnimationFrame(loop);
+    }
+
+    function offline(){ const now = Date.now(); const last = state.meta.lastTick || now; const dt = Math.max(0, Math.min((now - last)/1000, 60*60*12)); if(dt>2){ const temp = JSON.parse(JSON.stringify(state)); if(temp.animals.chickens>0){ temp.animals.eggsReady += dt * (temp.animals.chickens / 60); } if(temp.buildings.house){ temp.resources.veggies += dt/30; } state.resources.eggs += Math.floor(temp.animals.eggsReady); state.resources.veggies += (temp.resources.veggies - state.resources.veggies); log(`⏳ Weg: ${Math.floor(dt/60)} min ➜ +${Math.floor(temp.animals.eggsReady)} eieren, +${Math.floor((temp.resources.veggies - state.resources.veggies))} groente.`);} state.meta.lastTick = now; }
+
+    // Tabs
+    function showTab(which){ [$.tabGame,$.tabMarket].forEach(b=>b.classList.remove('active')); [$.viewGame,$.viewMarket].forEach(v=>v.classList.add('hidden')); if(which==='market'){ $.tabMarket.classList.add('active'); $.viewMarket.classList.remove('hidden'); } else { $.tabGame.classList.add('active'); $.viewGame.classList.remove('hidden'); } }
+    $.tabGame.addEventListener('click', ()=>showTab('game'));
+    $.tabMarket.addEventListener('click', ()=>showTab('market'));
+
+    // Actions
+    $.chopBtn.addEventListener('click', ()=>{ if(timers.chop===0){ timers.chop=5; log('Je gaat op zoek naar hout…'); }});
+    $.forageBtn.addEventListener('click', ()=>{ if(timers.forage===0){ timers.forage=6; log('Je zoekt rond…'); }});
+    $.tillBtn.addEventListener('click', ()=>{ if(!state.resources.tools.hoe) return warn('Je hebt een schoffel nodig.'); if(state.garden.planted || state.garden.tilled) return warn('Tuin is al bezig of klaar om te zaaien.'); timers.gardenTask=4; log('Je spit de moestuin om…'); setTimeout(()=>{ state.garden.tilled=true; log('De aarde is losgemaakt.'); render(); }, 4000); });
+    $.plantBtn.addEventListener('click', ()=>{ if(!state.garden.tilled) return warn('Eerst spitten.'); const id=$.seedSelect.value; if(!id) return warn('Kies eerst een zaad.'); if((state.resources.seeds[id]||0) < 1) return warn('Je hebt dit zaad niet.'); const meta=SEED_BY_ID[id]; state.resources.seeds[id]-=1; state.garden.planted=true; state.garden.tilled=false; state.garden.plantId=id; state.garden.growProgress=0; state.garden.growTime=meta.grow; log(`${meta.icon} Je zaait ${meta.name.toLowerCase()} (−1).`); render(); });
+    $.harvestBtn.addEventListener('click', ()=>{ if(!(state.garden.planted && state.garden.growProgress>=1)) return warn('Nog niet rijp.'); const id=state.garden.plantId; const meta=SEED_BY_ID[id]; const min=meta.yield[0], max=meta.yield[1]; const amt=Math.floor(min+Math.random()*(max-min+1)); state.resources.crops[id]=(state.resources.crops[id]||0)+amt; if(id==='basic'){ state.resources.veggies=(state.resources.veggies||0)+amt; } state.garden={tilled:false,planted:false,plantId:null,growProgress:0,growTime:state.garden.growTime}; log(`${meta.icon} Je oogst ${meta.crop.toLowerCase()} (+${amt}).`); render(); });
+
+    // Craft/Build
+    $.craftAxeBtn.addEventListener('click', ()=>{ if(state.resources.tools.axe) return warn('Je hebt al een bijl.'); if(state.resources.wood<15) return warn('Benodigd: 15 hout'); state.resources.wood-=15; state.resources.tools.axe=true; log('🪓 Bijl gemaakt!'); render(); });
+    $.craftHoeBtn.addEventListener('click', ()=>{ if(state.resources.tools.hoe) return warn('Je hebt al een schoffel.'); if(state.resources.wood<10) return warn('Benodigd: 10 hout'); state.resources.wood-=10; state.resources.tools.hoe=true; log('🧹 Schoffel gemaakt!'); render(); });
+
+    // Trade
+    function totalCrops(){ return Object.values(state.resources.crops||{}).reduce((a,b)=>a+(b||0),0); }
+    function removeCrops(n){ let need=n; const entries=Object.entries(state.resources.crops||{}).sort((a,b)=>{ if(a[0]==='basic' && b[0]!=='basic') return -1; if(b[0]==='basic' && a[0]!=='basic') return 1; return (b[1]||0)-(a[1]||0); }); for(const [id,qty] of entries){ if(need<=0) break; const take=Math.min(qty||0, need); if(take>0){ state.resources.crops[id]-=take; need-=take; } } return n-need; }
+    function sellCrops(count, price){ let have = totalCrops() + (state.resources.veggies||0); if(have < count) return warn(`Je hebt niet genoeg groenten om ${count} te verkopen.`); let removed = removeCrops(count); if(removed < count){ const rest = Math.min(count-removed, state.resources.veggies||0); state.resources.veggies -= rest; removed += rest; } if(removed>0){ state.resources.gold += price; log(`💰 Je verkoopt ${count} groenten voor ${price} munten.`); render(); } }
+
+    $.sellWoodBtn.addEventListener('click', ()=>{ if(state.resources.wood<10) return warn('Je hebt 10 hout nodig.'); state.resources.wood-=10; state.resources.gold+=5; log('💰 Je verkoopt 10 hout voor 5 munten.'); render(); });
+    $.sellStoneBtn.addEventListener('click', ()=>{ if(state.resources.stone<5) return warn('Je hebt 5 steen nodig.'); state.resources.stone-=5; state.resources.gold+=7; log('💰 Je verkoopt 5 steen voor 7 munten.'); render(); });
+    $.sellVegBtn.addEventListener('click', ()=> sellCrops(5, 10));
+    $.sellEggBtn.addEventListener('click', ()=>{ if(state.resources.eggs<5) return warn('Je hebt 5 eieren nodig.'); state.resources.eggs-=5; state.resources.gold+=8; log('💰 Je verkoopt 5 eieren voor 8 munten.'); render(); });
+
+    // Save/Load/Migrate
+    function save(){ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); state.meta.lastSave = Date.now(); render(); }
+    function load(){ const raw = localStorage.getItem(SAVE_KEY); if(!raw) return; try { const data = JSON.parse(raw); deepMerge(state, data); migrate(); } catch(e){ console.warn('save issue', e); } }
+    function deepMerge(target, src){ for(const k in src){ if(typeof src[k]==='object' && src[k] && !Array.isArray(src[k])){ if(!target[k]) target[k] = {}; deepMerge(target[k], src[k]); } else { target[k]=src[k]; } } }
+    function migrate(){ if(typeof state.resources.seeds === 'number'){ state.resources.seeds = { basic: state.resources.seeds }; } if(!state.resources.crops) state.resources.crops = {}; if(state.garden && state.garden.growTime==null) state.garden.growTime = 20; if(state.garden && state.garden.plantId && !SEED_BY_ID[state.garden.plantId]){ state.garden.plantId='basic'; } if(state.resources.tools && 'pick' in state.resources.tools){ delete state.resources.tools.pick; } if(typeof state.resources.gold!=='number') state.resources.gold = 0; }
+
+    $.saveBtn.addEventListener('click', ()=>{ save(); toast('Opgeslagen.'); });
+    $.exportBtn.addEventListener('click', ()=>{ const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='homestead-save.json'; a.click(); URL.revokeObjectURL(url); });
+    $.importBtn.addEventListener('click', ()=>{ const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange = ()=>{ const f = inp.files[0]; if(!f) return; const reader = new FileReader(); reader.onload = ()=>{ try{ const data = JSON.parse(reader.result); deepMerge(state, data); migrate(); save(); render(); log('Save import voltooid.'); } catch(e){ warn('Kon save niet importeren.'); } }; reader.readAsText(f); }; inp.click(); });
+    $.resetBtn.addEventListener('click', ()=>{ if(confirm('Weet je zeker dat je opnieuw wilt beginnen?')){ localStorage.removeItem(SAVE_KEY); location.reload(); } });
+
+    $.autosaveToggle.addEventListener('change', (e)=>{ state.meta.autosave = e.target.checked; });
+    $.muteToggle.addEventListener('change', (e)=>{ state.meta.muted = e.target.checked; });
+
+    function warn(msg){ toast(msg); log('⚠️ '+msg); }
+    function toast(text){ const t = document.createElement('div'); t.textContent = text; t.style.cssText='position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1f2937;border:1px solid #334155;padding:10px 12px;border-radius:10px;color:#e5e7eb;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999;'; document.body.appendChild(t); setTimeout(()=>{t.style.opacity='0'; t.style.transition='opacity .4s';}, 1600); setTimeout(()=>t.remove(), 2100); }
+
+    window.addEventListener('error', (e)=>{ try{ log('⚠️ Scriptfout: '+(e.message||e.error)); }catch(_){} });
+
+    function boot(){ $.version.textContent = 'v'+VERSION; load(); offline(); render(); loop(); if(state.meta.autosave){ setInterval(()=> state.meta.autosave && save(), 10000); } window.addEventListener('beforeunload', save); }
+    boot();
+  })();
+  </script>
+</body>
+</html>
