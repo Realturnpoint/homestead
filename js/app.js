@@ -1,5 +1,5 @@
 ﻿(function(){
-    const VERSION = '1.8.0';
+    const VERSION = '0.0.2';
     const SAVE_KEY = 'homestead-save-v1';
 
     // Safe DOM getter
