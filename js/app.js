@@ -18,21 +18,21 @@
         })();
 
     const ICONS = Object.freeze({
-      gold: '🪙',
-      wood: '🪵',
-      stone: '🪨',
+      gold: '💰',
+      wood: '🌳',
+      stone: '⛏',
       eggs: '🥚',
-      axe: '🪓',
-      chainsaw: '🪚',
+      axe: '⚒',
+      chainsaw: '⚙',
       trekker: '🚜',
-      hoe: '⛏️',
-      shed: '🛖',
-      house: '🏠',
+      hoe: '⚒',
+      shed: '🏠',
+      house: '🏡',
       chicken: '🐔',
       seed: '🌱',
-      timer: '⏳',
-      warning: '⚠️',
-      broom: '🧹'
+      timer: '⏲',
+      warning: '⚠',
+      broom: '✨'
     });
     const $ = {
       version: el('version'), resources: el('resources'), log: el('log'), seedList: el('seedList'), cropList: el('cropList'),
