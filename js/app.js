@@ -27,9 +27,13 @@
       trekker: '&#x1F69C;',
       hoe: '&#x1F6E0;',
       shed: '&#x1F3E0;',
+      silo: '&#x1F3E2;',
       house: '&#x1F3E1;',
       chicken: '&#x1F414;',
       seed: '&#x1F331;',
+      metal: '&#x1F529;',
+      brick: '&#x1F9F1;',
+      glass: '&#x1FA9F;',
       timer: '&#x23F2;',
       warning: '&#x26A0;',
       broom: '&#x2728;'
@@ -44,8 +48,8 @@
       sellWoodRange: el('sellWoodRange'), sellStoneRange: el('sellStoneRange'), sellVegRange: el('sellVegRange'), sellEggRange: el('sellEggRange'),
       sellWoodCount: el('sellWoodCount'), sellStoneCount: el('sellStoneCount'), sellVegCount: el('sellVegCount'), sellEggCount: el('sellEggCount'),
       sellWoodBtn: el('sellWoodBtn'), sellStoneBtn: el('sellStoneBtn'), sellVegBtn: el('sellVegBtn'), sellEggBtn: el('sellEggBtn'),
-      buyChainsawBtn: el('buyChainsawBtn'), buyTrekkerBtn: el('buyTrekkerBtn'), chainsawOwned: el('chainsawOwned'), trekkerOwned: el('trekkerOwned'),
-      craftAxeBtn: el('craftAxeBtn'), craftHoeBtn: el('craftHoeBtn'), buildShedBtn: el('buildShedBtn'), buildHouseBtn: el('buildHouseBtn'),
+      buyChainsawBtn: el('buyChainsawBtn'), buyTrekkerBtn: el('buyTrekkerBtn'), buyMetalBtn: el('buyMetalBtn'), buyBrickBtn: el('buyBrickBtn'), buyGlassBtn: el('buyGlassBtn'), chainsawOwned: el('chainsawOwned'), trekkerOwned: el('trekkerOwned'),
+      craftAxeBtn: el('craftAxeBtn'), craftHoeBtn: el('craftHoeBtn'), buildShedBtn: el('buildShedBtn'), buildSiloBtn: el('buildSiloBtn'), buildHouseBtn: el('buildHouseBtn'),
       passiveList: el('passiveList'),
       saveBtn: el('saveBtn'), exportBtn: el('exportBtn'), importBtn: el('importBtn'), resetBtn: el('resetBtn'), autosaveToggle: el('autosaveToggle'), muteToggle: el('muteToggle'), resetGameBtn: el('resetGameBtn'), saveInfo: el('saveInfo'),
     };
@@ -53,15 +57,15 @@
     const state = {
       resources: {
         gold: 0,
-        wood: 0, stone: 0, eggs: 0, veggies: 0,
+        wood: 0, stone: 0, eggs: 0, veggies: 0, metalPlates: 0, bricks: 0, glass: 0,
         seeds: {},
         crops: {},
         tools: { axe:false, hoe:false, chainsaw:false, trekker:false }
       },
       garden: { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20, task:null },
       animals: { chickens: 0, eggsReady: 0 },
-      buildings: { shed:false, house:false },
-      meta: { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, log: [] }
+      buildings: { sheds: 0, silos: 0, house:false },
+      meta: { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, lastSiloWarn:0, log: [] }
     };
 
     let autosaveTimer = null;
@@ -85,7 +89,28 @@
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const fmt = number => Math.floor(number).toLocaleString('nl-NL');
 
-    const inventoryCapacity = () => state.buildings.house ? 5000 : (state.buildings.shed ? 500 : 200);
+    const MAX_SHEDS = 5;
+    const MAX_SILOS = 2;
+    const SHED_WOOD_COST = 50;
+    const SHED_METAL_COST = 5;
+    const SILO_WOOD_COST = 200;
+    const SILO_METAL_COST = 8;
+    const HOUSE_WOOD_COST = 150;
+    const HOUSE_BRICK_COST = 40;
+    const HOUSE_GLASS_COST = 20;
+
+    const inventoryCapacity = () => {
+      if(state.buildings.house) return 5000;
+      const sheds = state.buildings.sheds || 0;
+      return 200 + Math.max(0, Math.min(MAX_SHEDS, sheds)) * 300;
+    };
+
+    const veggieCapacity = () => {
+      const silos = Math.max(0, Math.min(MAX_SILOS, state.buildings.silos || 0));
+      if(silos === 0) return 50;
+      if(silos === 1) return 200;
+      return 250;
+    };
 
     function sumValues(obj = {}, filter) {
       if(typeof obj !== 'object' || !obj) return 0;
@@ -98,7 +123,8 @@
       const veggies = Math.max(r.veggies || 0, (r.crops && r.crops.basic) || 0);
       const otherCrops = sumValues(r.crops, key => key !== 'basic');
       const seeds = sumValues(r.seeds);
-      return (r.wood || 0) + (r.stone || 0) + (r.eggs || 0) + veggies + otherCrops + seeds;
+      const materials = (r.metalPlates || 0) + (r.bricks || 0) + (r.glass || 0);
+      return (r.wood || 0) + (r.stone || 0) + (r.eggs || 0) + veggies + otherCrops + seeds + materials;
     }
 
     function availableInventorySpace(){
@@ -112,12 +138,30 @@
       warn('Opslag zit vol.');
     }
 
+    function warnSiloFull(){
+      const now = Date.now();
+      if(now - (state.meta.lastSiloWarn || 0) < 2000) return;
+      state.meta.lastSiloWarn = now;
+      warn('Silo zit vol.');
+    }
+
     function reserveInventory(amount, opts = {}){
       if(amount <= 0) return 0;
       const available = availableInventorySpace();
-      const allowed = Math.max(0, Math.min(amount, available));
+      let allowed = Math.max(0, Math.min(amount, available));
+      let cappedBySilo = false;
+      if(opts.key === 'veggies'){
+        const capacityLeft = Math.max(0, veggieCapacity() - (state.resources.veggies || 0));
+        if(capacityLeft < allowed){
+          allowed = capacityLeft;
+        }
+        if(capacityLeft < amount){
+          cappedBySilo = true;
+        }
+      }
       if(amount > 0 && allowed < amount && !opts.silent){
-        warnInventoryFull();
+        if(opts.key === 'veggies' && cappedBySilo) warnSiloFull();
+        else warnInventoryFull();
       }
       return allowed;
     }
@@ -131,7 +175,8 @@
     });
 
     function addInventoryResource(key, amount, opts){
-      const allowed = reserveInventory(amount, opts);
+      const options = Object.assign({}, opts, { key });
+      const allowed = reserveInventory(amount, options);
       if(allowed <= 0) return 0;
       state.resources[key] = (state.resources[key] || 0) + allowed;
       return allowed;
@@ -217,23 +262,51 @@
     function render(){
       const r = state.resources;
       const g = state.garden;
+      const vegCap = veggieCapacity();
+      const sheds = state.buildings.sheds || 0;
+      const silos = state.buildings.silos || 0;
       if($.resources){
         const capacity = inventoryCapacity();
         const usedStorage = Math.max(0, Math.floor(inventoryUsage()));
         const storageNote = usedStorage >= capacity ? ' (vol)' : '';
+        const vegTotal = Math.floor(r.veggies || 0);
         $.resources.innerHTML = `
         <span class="pill">${ICONS.gold} Munten: <strong class="qty">${fmt(r.gold)}</strong></span>
         <span class="pill">${ICONS.wood} Hout: <strong class="qty">${fmt(r.wood)}</strong></span>
         <span class="pill">${ICONS.stone} Steen: <strong class="qty">${fmt(r.stone)}</strong></span>
         <span class="pill">${ICONS.eggs} Eieren: <strong class="qty">${fmt(r.eggs)}</strong></span>
-        <span class="pill">${ICONS.seed} Groente: <strong class="qty">${fmt(r.veggies || 0)}</strong></span>
+        <span class="pill">${ICONS.metal} Metalen platen: <strong class="qty">${fmt(r.metalPlates || 0)}</strong></span>
+        <span class="pill">${ICONS.brick} Bakstenen: <strong class="qty">${fmt(r.bricks || 0)}</strong></span>
+        <span class="pill">${ICONS.glass} Glas: <strong class="qty">${fmt(r.glass || 0)}</strong></span>
+        <span class="pill">${ICONS.seed} Groente: <strong class="qty">${fmt(vegTotal)}</strong> / ${fmt(vegCap)}</span>
         <span class="pill">Opslag: <strong class="qty">${fmt(usedStorage)}</strong> / ${fmt(capacity)}${storageNote}</span>
         <span class="pill">${ICONS.axe} Bijl: <strong>${r.tools.axe ? 'ja' : 'nee'}</strong></span>
         <span class="pill">${ICONS.chainsaw} Kettingzaag: <strong>${r.tools.chainsaw ? 'ja' : 'nee'}</strong></span>
         <span class="pill">${ICONS.trekker} Trekker: <strong>${r.tools.trekker ? 'ja' : 'nee'}</strong></span>
         <span class="pill">${ICONS.hoe} Schoffel: <strong>${r.tools.hoe ? 'ja' : 'nee'}</strong></span>
-        <span class="pill">${ICONS.shed} Schuur: <strong>${state.buildings.shed ? 'ja' : 'nee'}</strong></span>
+        <span class="pill">${ICONS.shed} Schuren: <strong>${sheds}/${MAX_SHEDS}</strong></span>
+        <span class="pill">${ICONS.silo} Silo's: <strong>${silos}/${MAX_SILOS}</strong></span>
         <span class="pill">${ICONS.house} Huis: <strong>${state.buildings.house ? 'ja' : 'nee'}</strong></span>`;
+      }
+
+      if($.buildShedBtn){
+        $.buildShedBtn.disabled = sheds >= MAX_SHEDS;
+        $.buildShedBtn.textContent = sheds >= MAX_SHEDS
+          ? `Max schuren (${MAX_SHEDS})`
+          : `Bouw schuur (${SHED_WOOD_COST} hout, ${SHED_METAL_COST} platen) [${sheds}/${MAX_SHEDS}]`;
+      }
+      if($.buildSiloBtn){
+        const nextCap = silos >= MAX_SILOS ? vegCap : (silos === 0 ? 200 : 250);
+        $.buildSiloBtn.disabled = silos >= MAX_SILOS;
+        $.buildSiloBtn.textContent = silos >= MAX_SILOS
+          ? `Max silo's (${MAX_SILOS})`
+          : `Bouw silo (${SILO_WOOD_COST} hout, ${SILO_METAL_COST} platen) [${silos}/${MAX_SILOS}] -> opslag ${fmt(nextCap)}`;
+      }
+      if($.buildHouseBtn){
+        $.buildHouseBtn.disabled = !!state.buildings.house;
+        $.buildHouseBtn.textContent = state.buildings.house
+          ? 'Huis staat al (5000 opslag)'
+          : `Zet huis op (${HOUSE_WOOD_COST} hout, ${HOUSE_BRICK_COST} baksteen, ${HOUSE_GLASS_COST} glas)`;
       }
 
       listPills(r.seeds, SEED_BY_ID, $.seedList);
@@ -271,8 +344,13 @@
 
       if($.passiveList){
         const passive = [];
+        if(sheds > 0){
+          const woodBonus = sheds * 10;
+          passive.push(`${ICONS.shed} ${sheds} schuur(s): +${woodBonus}% hout uit hakken`);
+        }
         if(state.resources.tools.chainsaw) passive.push(`${ICONS.chainsaw} +1 hout / 3s`);
         if(state.resources.tools.trekker) passive.push(`${ICONS.trekker} +1 groente / 30s (moestuintaken sneller)`);
+        if(silos > 0) passive.push(`${ICONS.silo} ${silos} silo(s): Groente opslag ${fmt(vegCap)}`);
         if(state.animals.chickens > 0) passive.push(`${ICONS.chicken} ${state.animals.chickens} kip(pen): 1 ei / kip / 60s`);
         $.passiveList.innerHTML = passive.length ? passive.map(item => `<li>${item}</li>`).join('') : '<li class="small">Nog geen passieve bonussen</li>';
       }
@@ -325,7 +403,8 @@
           let base = 3;
           if(state.resources.tools.chainsaw) base = 20;
           else if(state.resources.tools.axe) base = 8;
-          const bonus = state.buildings.shed ? base * 0.1 : 0;
+          const shedBonus = (state.buildings.sheds || 0) * 0.1;
+          const bonus = base * shedBonus;
           const gained = Math.round(base + bonus);
           const stored = addInventoryResource('wood', gained);
           if(stored > 0){
@@ -526,7 +605,7 @@
       if(state.resources.tools.trekker){
         amount = Math.max(1, Math.floor(amount * 1.25));
       }
-      const stored = reserveInventory(amount);
+      const stored = reserveInventory(amount, { key: id === 'basic' ? 'veggies' : undefined });
       if(stored <= 0){
         warn('Geen opslagruimte voor de oogst. Maak ruimte vrij en probeer opnieuw.');
         return;
@@ -580,18 +659,42 @@
     });
 
     if($.buildShedBtn) $.buildShedBtn.addEventListener('click', () => {
-      if(state.buildings.shed) return warn('Schuur bestaat al.');
-      if(state.resources.wood < 50) return warn('Benodigd: 50 hout');
-      state.resources.wood -= 50;
-      state.buildings.shed = true;
-      log(`${ICONS.shed} Schuur gebouwd! (+10% hout uit hakken, opslag tot 500).`);
+      const current = state.buildings.sheds || 0;
+      if(current >= MAX_SHEDS) return warn(`Maximaal ${MAX_SHEDS} schuren.`);
+      if(state.resources.wood < SHED_WOOD_COST) return warn(`Benodigd: ${SHED_WOOD_COST} hout`);
+      if((state.resources.metalPlates || 0) < SHED_METAL_COST) return warn(`Benodigd: ${SHED_METAL_COST} metalen platen`);
+      state.resources.wood -= SHED_WOOD_COST;
+      state.resources.metalPlates -= SHED_METAL_COST;
+      state.buildings.sheds = current + 1;
+      const bonus = state.buildings.sheds * 10;
+      log(`${ICONS.shed} Schuur gebouwd (${state.buildings.sheds}/${MAX_SHEDS}). Houtbonus: +${bonus}%.`);
+      render();
+    });
+
+    if($.buildSiloBtn) $.buildSiloBtn.addEventListener('click', () => {
+      const current = state.buildings.silos || 0;
+      if(current >= MAX_SILOS) return warn(`Maximaal ${MAX_SILOS} silo's.`);
+      if(state.resources.wood < SILO_WOOD_COST) return warn(`Benodigd: ${SILO_WOOD_COST} hout`);
+      if((state.resources.metalPlates || 0) < SILO_METAL_COST) return warn(`Benodigd: ${SILO_METAL_COST} metalen platen`);
+      state.resources.wood -= SILO_WOOD_COST;
+      state.resources.metalPlates -= SILO_METAL_COST;
+      state.buildings.silos = current + 1;
+      const cap = veggieCapacity();
+      if(state.resources.veggies > cap){
+        state.resources.veggies = cap;
+      }
+      log(`${ICONS.silo} Silo gebouwd (${state.buildings.silos}/${MAX_SILOS}). Groente opslag: ${fmt(cap)}.`);
       render();
     });
 
     if($.buildHouseBtn) $.buildHouseBtn.addEventListener('click', () => {
       if(state.buildings.house) return warn('Huis bestaat al.');
-      if(state.resources.wood < 150) return warn('Benodigd: 150 hout');
-      state.resources.wood -= 150;
+      if(state.resources.wood < HOUSE_WOOD_COST) return warn(`Benodigd: ${HOUSE_WOOD_COST} hout`);
+      if((state.resources.bricks || 0) < HOUSE_BRICK_COST) return warn(`Benodigd: ${HOUSE_BRICK_COST} bakstenen`);
+      if((state.resources.glass || 0) < HOUSE_GLASS_COST) return warn(`Benodigd: ${HOUSE_GLASS_COST} glas`);
+      state.resources.wood -= HOUSE_WOOD_COST;
+      state.resources.bricks -= HOUSE_BRICK_COST;
+      state.resources.glass -= HOUSE_GLASS_COST;
       state.buildings.house = true;
       log(`${ICONS.house} Huis opgezet! Opslaglimiet verhoogd naar 5000.`);
       render();
@@ -699,6 +802,45 @@
       render();
     });
 
+    if($.buyMetalBtn) $.buyMetalBtn.addEventListener('click', () => {
+      const cost = 40;
+      if(state.resources.gold < cost) return warn(`Benodigd: ${cost} munten`);
+      const stored = addInventoryResource('metalPlates', 1);
+      if(stored <= 0){
+        warnInventoryFull();
+        return;
+      }
+      state.resources.gold -= cost;
+      log(`${ICONS.metal} Je koopt een metalen plaat (-${cost} munten).`);
+      render();
+    });
+
+    if($.buyBrickBtn) $.buyBrickBtn.addEventListener('click', () => {
+      const cost = 25;
+      if(state.resources.gold < cost) return warn(`Benodigd: ${cost} munten`);
+      const stored = addInventoryResource('bricks', 1);
+      if(stored <= 0){
+        warnInventoryFull();
+        return;
+      }
+      state.resources.gold -= cost;
+      log(`${ICONS.brick} Je koopt een baksteen (-${cost} munten).`);
+      render();
+    });
+
+    if($.buyGlassBtn) $.buyGlassBtn.addEventListener('click', () => {
+      const cost = 30;
+      if(state.resources.gold < cost) return warn(`Benodigd: ${cost} munten`);
+      const stored = addInventoryResource('glass', 1);
+      if(stored <= 0){
+        warnInventoryFull();
+        return;
+      }
+      state.resources.gold -= cost;
+      log(`${ICONS.glass} Je koopt glas (-${cost} munten).`);
+      render();
+    });
+
     function save(){
       try{
         localStorage.setItem(SAVE_KEY, JSON.stringify(state));
@@ -728,6 +870,9 @@
       }
       if(!state.resources.crops) state.resources.crops = {};
       if(!state.resources.tools) state.resources.tools = { axe:false, hoe:false, chainsaw:false, trekker:false };
+      if(typeof state.resources.metalPlates !== 'number') state.resources.metalPlates = 0;
+      if(typeof state.resources.bricks !== 'number') state.resources.bricks = 0;
+      if(typeof state.resources.glass !== 'number') state.resources.glass = 0;
       if(state.resources.tools.pick) delete state.resources.tools.pick;
       if(!state.garden) state.garden = { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20, task:null };
       if(state.garden && state.garden.growTime == null) state.garden.growTime = 20;
@@ -735,10 +880,24 @@
       if(state.garden && state.garden.plantId && !SEED_BY_ID[state.garden.plantId]){
         state.garden.plantId = 'basic';
       }
+      if(!state.buildings) state.buildings = { sheds:0, silos:0, house:false };
+      if(typeof state.buildings.sheds !== 'number'){
+        state.buildings.sheds = state.buildings.shed ? 1 : 0;
+      }
+      if(typeof state.buildings.silos !== 'number') state.buildings.silos = state.buildings.silo || 0;
+      if('shed' in state.buildings) delete state.buildings.shed;
+      if('silo' in state.buildings) delete state.buildings.silo;
+      state.buildings.sheds = Math.max(0, Math.min(MAX_SHEDS, state.buildings.sheds || 0));
+      state.buildings.silos = Math.max(0, Math.min(MAX_SILOS, state.buildings.silos || 0));
+      const migratedVegCap = veggieCapacity();
+      if(typeof state.resources.veggies === 'number' && state.resources.veggies > migratedVegCap){
+        state.resources.veggies = migratedVegCap;
+      }
       if(!state.meta){
-        state.meta = { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, log: [] };
-      } else if(typeof state.meta.lastInventoryWarn !== 'number'){
-        state.meta.lastInventoryWarn = 0;
+        state.meta = { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, lastSiloWarn:0, log: [] };
+      } else {
+        if(typeof state.meta.lastInventoryWarn !== 'number') state.meta.lastInventoryWarn = 0;
+        if(typeof state.meta.lastSiloWarn !== 'number') state.meta.lastSiloWarn = 0;
       }
       if(typeof state.resources.gold !== 'number') state.resources.gold = 0;
     }
@@ -843,6 +1002,8 @@
         sessionStorage.removeItem(SAVE_KEY);
       } catch(_){}
       state.meta.lastSave = 0;
+      state.meta.lastInventoryWarn = 0;
+      state.meta.lastSiloWarn = 0;
       toast('Reset voltooid. Spel wordt opnieuw geladen...');
       log(`${ICONS.warning} Reset uitgevoerd, spel wordt opnieuw geladen.`);
       setTimeout(() => location.reload(), 400);
