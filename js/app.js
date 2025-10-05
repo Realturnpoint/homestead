@@ -41,6 +41,8 @@
       forageBtn: el('forageBtn'), forageBar: el('forageBar'),
       seedSelect: el('seedSelect'), tillBtn: el('tillBtn'), plantBtn: el('plantBtn'), harvestBtn: el('harvestBtn'), gardenBar: el('gardenBar'), gardenStatus: el('gardenStatus'), veggiesReadyLine: el('veggiesReadyLine'),
       buyChickenBtn: el('buyChickenBtn'), collectEggsBtn: el('collectEggsBtn'), animalStatus: el('animalStatus'), eggsReadyLine: el('eggsReadyLine'),
+      sellWoodRange: el('sellWoodRange'), sellStoneRange: el('sellStoneRange'), sellVegRange: el('sellVegRange'), sellEggRange: el('sellEggRange'),
+      sellWoodCount: el('sellWoodCount'), sellStoneCount: el('sellStoneCount'), sellVegCount: el('sellVegCount'), sellEggCount: el('sellEggCount'),
       sellWoodBtn: el('sellWoodBtn'), sellStoneBtn: el('sellStoneBtn'), sellVegBtn: el('sellVegBtn'), sellEggBtn: el('sellEggBtn'),
       buyChainsawBtn: el('buyChainsawBtn'), buyTractorBtn: el('buyTractorBtn'), chainsawOwned: el('chainsawOwned'), tractorOwned: el('tractorOwned'),
       craftAxeBtn: el('craftAxeBtn'), craftHoeBtn: el('craftHoeBtn'), buildShedBtn: el('buildShedBtn'), buildHouseBtn: el('buildHouseBtn'),
@@ -59,7 +61,7 @@
       garden: { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20, task:null },
       animals: { chickens: 0, eggsReady: 0 },
       buildings: { shed:false, house:false },
-      meta: { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, log: [] }
+      meta: { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, log: [] }
     };
 
     // Helpers
@@ -80,6 +82,98 @@
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const fmt = number => Math.floor(number).toLocaleString('nl-NL');
+
+    const inventoryCapacity = () => state.buildings.house ? 5000 : (state.buildings.shed ? 500 : 200);
+
+    function sumValues(obj = {}, filter) {
+      if(typeof obj !== 'object' || !obj) return 0;
+      const shouldInclude = typeof filter === 'function' ? filter : (() => true);
+      return Object.entries(obj).reduce((sum, [key, qty]) => sum + (shouldInclude(key) ? (qty || 0) : 0), 0);
+    }
+
+    function inventoryUsage(){
+      const r = state.resources;
+      const veggies = Math.max(r.veggies || 0, (r.crops && r.crops.basic) || 0);
+      const otherCrops = sumValues(r.crops, key => key !== 'basic');
+      const seeds = sumValues(r.seeds);
+      return (r.wood || 0) + (r.stone || 0) + (r.eggs || 0) + veggies + otherCrops + seeds;
+    }
+
+    function availableInventorySpace(){
+      return inventoryCapacity() - inventoryUsage();
+    }
+
+    function warnInventoryFull(){
+      const now = Date.now();
+      if(now - (state.meta.lastInventoryWarn || 0) < 2000) return;
+      state.meta.lastInventoryWarn = now;
+      warn('Opslag zit vol.');
+    }
+
+    function reserveInventory(amount, opts = {}){
+      if(amount <= 0) return 0;
+      const available = availableInventorySpace();
+      const allowed = Math.max(0, Math.min(amount, available));
+      if(amount > 0 && allowed < amount && !opts.silent){
+        warnInventoryFull();
+      }
+      return allowed;
+    }
+
+
+    const SELL_INFO = Object.freeze({
+      wood: { rate: 0.5, label: 'hout' },
+      stone: { rate: 7/5, label: 'steen' },
+      veggies: { rate: 2, label: 'groenten' },
+      eggs: { rate: 8/5, label: 'eieren' }
+    });
+
+    function addInventoryResource(key, amount, opts){
+      const allowed = reserveInventory(amount, opts);
+      if(allowed <= 0) return 0;
+      state.resources[key] = (state.resources[key] || 0) + allowed;
+      return allowed;
+    }
+
+
+    function updateSellControls(){
+      if(!$.sellWoodRange && !$.sellStoneRange && !$.sellVegRange && !$.sellEggRange) return;
+      const configs = [
+        { key:'wood', range: $.sellWoodRange, count: $.sellWoodCount, button: $.sellWoodBtn, max: () => Math.max(0, Math.floor(state.resources.wood || 0)) },
+        { key:'stone', range: $.sellStoneRange, count: $.sellStoneCount, button: $.sellStoneBtn, max: () => Math.max(0, Math.floor(state.resources.stone || 0)) },
+        { key:'veggies', range: $.sellVegRange, count: $.sellVegCount, button: $.sellVegBtn, max: () => Math.max(0, Math.floor(totalCrops() + (state.resources.veggies || 0))) },
+        { key:'eggs', range: $.sellEggRange, count: $.sellEggCount, button: $.sellEggBtn, max: () => Math.max(0, Math.floor(state.resources.eggs || 0)) },
+      ];
+      configs.forEach(cfg => {
+        const info = SELL_INFO[cfg.key];
+        if(!info) return;
+        const slider = cfg.range;
+        const button = cfg.button;
+        const counter = cfg.count;
+        if(!slider || !button || !counter) return;
+        const max = cfg.max();
+        slider.max = String(max);
+        if(max <= 0){
+          slider.value = '0';
+          slider.disabled = true;
+          slider.dataset.prevMax = '0';
+        } else {
+          slider.disabled = false;
+          const prevMax = Number(slider.dataset.prevMax || '0');
+          let current = Math.max(0, Math.floor(Number(slider.value) || 0));
+          if(prevMax <= 0 && current === 0){
+            current = max;
+          }
+          slider.value = String(Math.min(current, max));
+          slider.dataset.prevMax = String(max);
+        }
+        const amount = max <= 0 ? 0 : Math.max(0, Math.min(max, Math.floor(Number(slider.value) || 0)));
+        counter.textContent = `${amount} / ${max}`;
+        const coins = amount > 0 ? Math.floor(amount * info.rate) : 0;
+        button.textContent = `Verkoop ${info.label} (+${coins} munten)`;
+        button.disabled = amount <= 0 || coins <= 0;
+      });
+    }
 
     function listPills(obj, dict, target){
       if(!target) return;
@@ -122,11 +216,16 @@
       const r = state.resources;
       const g = state.garden;
       if($.resources){
+        const capacity = inventoryCapacity();
+        const usedStorage = Math.max(0, Math.floor(inventoryUsage()));
+        const storageNote = usedStorage >= capacity ? ' (vol)' : '';
         $.resources.innerHTML = `
         <span class="pill">${ICONS.gold} Munten: <strong class="qty">${fmt(r.gold)}</strong></span>
         <span class="pill">${ICONS.wood} Hout: <strong class="qty">${fmt(r.wood)}</strong></span>
         <span class="pill">${ICONS.stone} Steen: <strong class="qty">${fmt(r.stone)}</strong></span>
         <span class="pill">${ICONS.eggs} Eieren: <strong class="qty">${fmt(r.eggs)}</strong></span>
+        <span class="pill">${ICONS.seed} Groente: <strong class="qty">${fmt(r.veggies || 0)}</strong></span>
+        <span class="pill">Opslag: <strong class="qty">${fmt(usedStorage)}</strong> / ${fmt(capacity)}${storageNote}</span>
         <span class="pill">${ICONS.axe} Bijl: <strong>${r.tools.axe ? 'ja' : 'nee'}</strong></span>
         <span class="pill">${ICONS.chainsaw} Kettingzaag: <strong>${r.tools.chainsaw ? 'ja' : 'nee'}</strong></span>
         <span class="pill">${ICONS.tractor} Tractor: <strong>${r.tools.tractor ? 'ja' : 'nee'}</strong></span>
@@ -166,14 +265,14 @@
       if($.collectEggsBtn) $.collectEggsBtn.disabled = Math.floor(state.animals.eggsReady) <= 0;
 
       renderSeedSelect();
+      updateSellControls();
 
       if($.passiveList){
         const passive = [];
         if(state.resources.tools.chainsaw) passive.push(`${ICONS.chainsaw} +1 hout / 3s`);
-        if(state.buildings.shed) passive.push(`${ICONS.shed} +10% hout uit hakken`);
-        if(state.buildings.house) passive.push(`${ICONS.house} +1 groente / 30s`);
+        if(state.resources.tools.tractor) passive.push(`${ICONS.tractor} +1 groente / 30s (moestuintaken sneller)`);
         if(state.animals.chickens > 0) passive.push(`${ICONS.chicken} ${state.animals.chickens} kip(pen): 1 ei / kip / 60s`);
-        $.passiveList.innerHTML = passive.length ? passive.map(item => `<li>${item}</li>`).join('') : '<li class="small">Nog geen passieve productie</li>';
+        $.passiveList.innerHTML = passive.length ? passive.map(item => `<li>${item}</li>`).join('') : '<li class="small">Nog geen passieve bonussen</li>';
       }
 
       if($.saveInfo){
@@ -199,11 +298,11 @@
       if(state.animals.chickens > 0){
         state.animals.eggsReady += dt * (state.animals.chickens / 60);
       }
-      if(state.buildings.house){
-        state.resources.veggies += dt / 30;
+      if(state.resources.tools.tractor){
+        addInventoryResource('veggies', dt / 30, { silent:true });
       }
       if(state.resources.tools.chainsaw){
-        state.resources.wood += dt / 3;
+        addInventoryResource('wood', dt / 3, { silent:true });
       }
 
       render();
@@ -226,8 +325,13 @@
           else if(state.resources.tools.axe) base = 8;
           const bonus = state.buildings.shed ? base * 0.1 : 0;
           const gained = Math.round(base + bonus);
-          state.resources.wood += gained;
-          log(`${ICONS.wood} Je vond hout (+${gained}).`);
+          const stored = addInventoryResource('wood', gained);
+          if(stored > 0){
+            const note = stored < gained ? ' (opslag vol, rest blijft liggen)' : '';
+            log(`${ICONS.wood} Je vond hout (+${stored})${note}.`);
+          } else {
+            log(`${ICONS.warning} Geen ruimte voor hout; je laat de vondst liggen.`);
+          }
           render();
         }
       } else if($.chopBar){
@@ -243,16 +347,30 @@
         if(timers.forage === 0){
           const roll = Math.random();
           if(roll < 0.30){
-            state.resources.stone += 1;
-            log(`${ICONS.stone} Je vindt een losse steen (+1).`);
+            const storedStone = addInventoryResource('stone', 1);
+            if(storedStone > 0){
+              log(`${ICONS.stone} Je vindt een losse steen (+${storedStone}).`);
+            } else {
+              log(`${ICONS.warning} Geen ruimte voor stenen; je laat deze liggen.`);
+            }
           } else if(roll < 0.60){
             const extra = 1 + Math.floor(Math.random() * 2);
-            state.resources.wood += extra;
-            log(`${ICONS.wood} Je raapt losse takken (+${extra} hout).`);
+            const storedWood = addInventoryResource('wood', extra);
+            if(storedWood > 0){
+              const note = storedWood < extra ? ' (opslag vol, rest blijft liggen)' : '';
+              log(`${ICONS.wood} Je raapt losse takken (+${storedWood} hout)${note}.`);
+            } else {
+              log(`${ICONS.warning} Geen ruimte voor extra hout; je laat de takken liggen.`);
+            }
           } else if(roll < 0.90 && seedsCatalog.length){
             const seed = seedsCatalog[Math.floor(Math.random() * seedsCatalog.length)];
-            state.resources.seeds[seed.id] = (state.resources.seeds[seed.id] || 0) + 1;
-            log(`${seed.icon || ICONS.seed} Je vindt ${seed.name.toLowerCase()} (+1).`);
+            const storedSeed = reserveInventory(1);
+            if(storedSeed > 0){
+              state.resources.seeds[seed.id] = (state.resources.seeds[seed.id] || 0) + storedSeed;
+              log(`${seed.icon || ICONS.seed} Je vindt ${seed.name.toLowerCase()} (+${storedSeed}).`);
+            } else {
+              log(`${ICONS.warning} Geen ruimte voor ${seed.name.toLowerCase()}-zaad; je laat het liggen.`);
+            }
           } else {
             log(`${ICONS.timer} Je zoekt rond maar vindt niets.`);
           }
@@ -291,7 +409,7 @@
         if(temp.animals.chickens > 0){
           temp.animals.eggsReady += dt * (temp.animals.chickens / 60);
         }
-        if(temp.buildings.house){
+        if(temp.resources.tools && temp.resources.tools.tractor){
           temp.resources.veggies += dt / 30;
         }
         if(temp.resources.tools && temp.resources.tools.chainsaw){
@@ -300,10 +418,21 @@
         const eggsGain = Math.floor(temp.animals.eggsReady) - Math.floor(state.animals.eggsReady);
         const vegGain = temp.resources.veggies - state.resources.veggies;
         const woodGain = Math.floor(temp.resources.wood - state.resources.wood);
-        if(eggsGain > 0) state.resources.eggs += eggsGain;
-        if(vegGain > 0) state.resources.veggies += vegGain;
-        if(woodGain > 0) state.resources.wood += woodGain;
-        log(`${ICONS.timer} Weg: ${Math.floor(dt / 60)} min -> +${Math.max(0, eggsGain)} eieren, +${Math.floor(Math.max(0, vegGain))} groente${woodGain > 0 ? `, +${woodGain} hout` : ''}.`);
+        const eggsStored = eggsGain > 0 ? addInventoryResource('eggs', eggsGain, { silent:true }) : 0;
+        const vegStored = vegGain > 0 ? addInventoryResource('veggies', vegGain, { silent:true }) : 0;
+        const woodStored = woodGain > 0 ? addInventoryResource('wood', woodGain, { silent:true }) : 0;
+        const eggsLost = Math.max(0, eggsGain - eggsStored);
+        const vegLost = Math.max(0, vegGain - vegStored);
+        const woodLost = Math.max(0, woodGain - woodStored);
+        if(eggsStored > 0 || vegStored > 0 || woodStored > 0){
+          const eggText = eggsStored > 0 ? `+${eggsStored} eieren` : null;
+          const vegText = vegStored > 0 ? `+${Math.floor(vegStored)} groente` : null;
+          const woodText = woodStored > 0 ? `+${woodStored} hout` : null;
+          const parts = [eggText, vegText, woodText].filter(Boolean);
+          log(`${ICONS.timer} Weg: ${Math.floor(dt / 60)} min -> ${parts.join(', ')}${(eggsLost || vegLost || woodLost) ? ' (opslag vol, rest gemist)' : ''}.`);
+        } else if(eggsLost > 0 || vegLost > 0 || woodLost > 0){
+          log(`${ICONS.timer} Weg: ${Math.floor(dt / 60)} min -> opslag vol, niets meegenomen.`);
+        }
       }
       state.meta.lastTick = now;
     }
@@ -334,6 +463,10 @@
         timers.forage = 6;
         log(`${ICONS.seed} Je zoekt rond...`);
       }
+    });
+
+    [$.sellWoodRange, $.sellStoneRange, $.sellVegRange, $.sellEggRange].forEach(range => {
+      if(range) range.addEventListener('input', updateSellControls);
     });
 
     if($.tillBtn) $.tillBtn.addEventListener('click', () => {
@@ -391,12 +524,18 @@
       if(state.resources.tools.tractor){
         amount = Math.max(1, Math.floor(amount * 1.25));
       }
-      state.resources.crops[id] = (state.resources.crops[id] || 0) + amount;
+      const stored = reserveInventory(amount);
+      if(stored <= 0){
+        warn('Geen opslagruimte voor de oogst. Maak ruimte vrij en probeer opnieuw.');
+        return;
+      }
+      state.resources.crops[id] = (state.resources.crops[id] || 0) + stored;
       if(id === 'basic'){
-        state.resources.veggies = (state.resources.veggies || 0) + amount;
+        state.resources.veggies = (state.resources.veggies || 0) + stored;
       }
       state.garden = { tilled:false, planted:false, plantId:null, growProgress:0, growTime:meta.grow, task:null };
-      log(`${meta.icon || ICONS.seed} Je oogst ${meta.crop.toLowerCase()} (+${amount}).`);
+      const note = stored < amount ? ' (opslag vol, rest blijft achter)' : '';
+      log(`${meta?.icon || ICONS.seed} Je oogst ${meta?.crop.toLowerCase() || 'gewas'} (+${stored})${note}.`);
       render();
     });
 
@@ -412,9 +551,11 @@
     if($.collectEggsBtn) $.collectEggsBtn.addEventListener('click', () => {
       const eggs = Math.floor(state.animals.eggsReady);
       if(eggs <= 0) return warn('Nog geen eieren.');
-      state.animals.eggsReady -= eggs;
-      state.resources.eggs += eggs;
-      log(`${ICONS.eggs} Je verzamelt ${eggs} ei(eren).`);
+      const stored = addInventoryResource('eggs', eggs);
+      if(stored <= 0) return;
+      state.animals.eggsReady -= stored;
+      const note = stored < eggs ? ' (opslag vol, rest blijft in het hok)' : '';
+      log(`${ICONS.eggs} Je verzamelt ${stored} ei(eren)${note}.`);
       render();
     });
 
@@ -441,7 +582,7 @@
       if(state.resources.wood < 50) return warn('Benodigd: 50 hout');
       state.resources.wood -= 50;
       state.buildings.shed = true;
-      log(`${ICONS.shed} Schuur gebouwd! (+10% hout uit hakken)`);
+      log(`${ICONS.shed} Schuur gebouwd! (+10% hout uit hakken, opslag tot 500).`);
       render();
     });
 
@@ -450,7 +591,7 @@
       if(state.resources.wood < 150) return warn('Benodigd: 150 hout');
       state.resources.wood -= 150;
       state.buildings.house = true;
-      log(`${ICONS.house} Huis opgezet! (+1 groente/30s)`);
+      log(`${ICONS.house} Huis opgezet! Opslaglimiet verhoogd naar 5000.`);
       render();
     });
 
@@ -493,28 +634,48 @@
     }
 
     if($.sellWoodBtn) $.sellWoodBtn.addEventListener('click', () => {
-      if(state.resources.wood < 10) return warn('Je hebt 10 hout nodig.');
-      state.resources.wood -= 10;
-      state.resources.gold += 5;
-      log(`${ICONS.gold} Je verkoopt 10 hout voor 5 munten.`);
+      const slider = $.sellWoodRange;
+      const amount = slider ? Math.min(Math.floor(Number(slider.value) || 0), Math.floor(state.resources.wood || 0)) : 0;
+      if(amount <= 0) return warn('Kies eerst een hoeveelheid hout.');
+      const coins = Math.floor(amount * SELL_INFO.wood.rate);
+      if(coins <= 0) return warn('Deze hoeveelheid levert niets op.');
+      state.resources.wood -= amount;
+      state.resources.gold += coins;
+      log(`${ICONS.gold} Je verkoopt ${amount} hout voor ${coins} munten.`);
       render();
     });
 
     if($.sellStoneBtn) $.sellStoneBtn.addEventListener('click', () => {
-      if(state.resources.stone < 5) return warn('Je hebt 5 steen nodig.');
-      state.resources.stone -= 5;
-      state.resources.gold += 7;
-      log(`${ICONS.gold} Je verkoopt 5 steen voor 7 munten.`);
+      const slider = $.sellStoneRange;
+      const amount = slider ? Math.min(Math.floor(Number(slider.value) || 0), Math.floor(state.resources.stone || 0)) : 0;
+      if(amount <= 0) return warn('Kies eerst een hoeveelheid steen.');
+      const coins = Math.floor(amount * SELL_INFO.stone.rate);
+      if(coins <= 0) return warn('Deze hoeveelheid levert niets op.');
+      state.resources.stone -= amount;
+      state.resources.gold += coins;
+      log(`${ICONS.gold} Je verkoopt ${amount} steen voor ${coins} munten.`);
       render();
     });
 
-    if($.sellVegBtn) $.sellVegBtn.addEventListener('click', () => sellCrops(5, 10));
+    if($.sellVegBtn) $.sellVegBtn.addEventListener('click', () => {
+      const slider = $.sellVegRange;
+      const available = totalCrops() + (state.resources.veggies || 0);
+      const amount = slider ? Math.min(Math.floor(Number(slider.value) || 0), Math.floor(available)) : 0;
+      if(amount <= 0) return warn('Kies eerst een hoeveelheid groenten.');
+      const coins = Math.floor(amount * SELL_INFO.veggies.rate);
+      if(coins <= 0) return warn('Deze hoeveelheid levert niets op.');
+      sellCrops(amount, coins);
+    });
 
     if($.sellEggBtn) $.sellEggBtn.addEventListener('click', () => {
-      if(state.resources.eggs < 5) return warn('Je hebt 5 eieren nodig.');
-      state.resources.eggs -= 5;
-      state.resources.gold += 8;
-      log(`${ICONS.gold} Je verkoopt 5 eieren voor 8 munten.`);
+      const slider = $.sellEggRange;
+      const amount = slider ? Math.min(Math.floor(Number(slider.value) || 0), Math.floor(state.resources.eggs || 0)) : 0;
+      if(amount <= 0) return warn('Kies eerst een hoeveelheid eieren.');
+      const coins = Math.floor(amount * SELL_INFO.eggs.rate);
+      if(coins <= 0) return warn('Deze hoeveelheid levert niets op.');
+      state.resources.eggs -= amount;
+      state.resources.gold += coins;
+      log(`${ICONS.gold} Je verkoopt ${amount} eieren voor ${coins} munten.`);
       render();
     });
 
@@ -532,7 +693,7 @@
       if(state.resources.gold < 300) return warn('Benodigd: 300 munten');
       state.resources.gold -= 300;
       state.resources.tools.tractor = true;
-      log(`${ICONS.tractor} Je koopt een tractor! Moestuin taken worden sneller en opbrengst hoger.`);
+      log(`${ICONS.tractor} Je koopt een tractor! Moestuintaken worden sneller, opbrengst hoger en +1 groente / 30s.`);
       render();
     });
 
@@ -571,6 +732,11 @@
       if(state.garden && typeof state.garden.task === 'undefined') state.garden.task = null;
       if(state.garden && state.garden.plantId && !SEED_BY_ID[state.garden.plantId]){
         state.garden.plantId = 'basic';
+      }
+      if(!state.meta){
+        state.meta = { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, log: [] };
+      } else if(typeof state.meta.lastInventoryWarn !== 'number'){
+        state.meta.lastInventoryWarn = 0;
       }
       if(typeof state.resources.gold !== 'number') state.resources.gold = 0;
     }

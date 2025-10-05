@@ -87,7 +87,7 @@
               </div>
             </div>
             <div class="card">
-              <h3>Passief inkomen</h3>
+              <h3>Passieve bonussen</h3>
               <ul class="small" id="passiveList"></ul>
             </div>
             <div class="card">
@@ -114,11 +114,27 @@
         <div class="grid">
           <div class="card">
             <h3>Verkoop</h3>
-            <div class="row stack">
-              <div class="row"><button id="sellWoodBtn">Verkoop 10 hout -> +5 munten</button></div>
-              <div class="row"><button id="sellStoneBtn">Verkoop 5 steen -> +7 munten</button></div>
-              <div class="row"><button id="sellVegBtn">Verkoop 5 groenten -> +10 munten</button></div>
-              <div class="row"><button id="sellEggBtn">Verkoop 5 eieren -> +8 munten</button></div>
+            <div class="row stack sell-panel">
+              <div class="sell-control">
+                <label class="small">Hout: <strong id="sellWoodCount">0</strong></label>
+                <input type="range" id="sellWoodRange" min="0" max="0" value="0" step="1">
+                <button id="sellWoodBtn" disabled>Verkoop hout (+0 munten)</button>
+              </div>
+              <div class="sell-control">
+                <label class="small">Steen: <strong id="sellStoneCount">0</strong></label>
+                <input type="range" id="sellStoneRange" min="0" max="0" value="0" step="1">
+                <button id="sellStoneBtn" disabled>Verkoop steen (+0 munten)</button>
+              </div>
+              <div class="sell-control">
+                <label class="small">Groenten: <strong id="sellVegCount">0</strong></label>
+                <input type="range" id="sellVegRange" min="0" max="0" value="0" step="1">
+                <button id="sellVegBtn" disabled>Verkoop groenten (+0 munten)</button>
+              </div>
+              <div class="sell-control">
+                <label class="small">Eieren: <strong id="sellEggCount">0</strong></label>
+                <input type="range" id="sellEggRange" min="0" max="0" value="0" step="1">
+                <button id="sellEggBtn" disabled>Verkoop eieren (+0 munten)</button>
+              </div>
             </div>
           </div>
           <div class="card">
