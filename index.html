@@ -94,6 +94,10 @@
               <ul class="small" id="passiveList"></ul>
             </div>
             <div class="card">
+              <h3>DLC Modules</h3>
+              <div class="column small" id="dlcList"></div>
+            </div>
+            <div class="card">
               <h3>Spelinstellingen</h3>
               <div class="row">
                 <label class="small"><input id="autosaveToggle" type="checkbox" checked> Autosave elke 10s</label>
@@ -155,8 +159,10 @@
     </main>
   </div>
 
-  <!-- scripts: eerst seeds, dan app -->
+  <!-- scripts: eerst seeds, dan DLC, dan app -->
   <script src="./js/seed.js"></script>
+  <script src="./js/dlc-loader.js"></script>
+  <script src="./js/dlc-animals.js"></script>
   <script src="./js/app.js"></script>
 </body>
 </html>

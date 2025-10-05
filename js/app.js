@@ -17,7 +17,7 @@
           return map;
         })();
 
-    const ICONS = Object.freeze({
+    const ICONS = {
       gold: '&#x1F4B0;',
       wood: '&#x1F333;',
       stone: '&#x26CF;',
@@ -37,7 +37,7 @@
       timer: '&#x23F2;',
       warning: '&#x26A0;',
       broom: '&#x2728;'
-    });
+    };
     const $ = {
       version: el('version'), resources: el('resources'), log: el('log'), seedList: el('seedList'), cropList: el('cropList'),
       tabGame: el('tabGame'), tabMarket: el('tabMarket'), viewGame: el('viewGame'), viewMarket: el('viewMarket'),
@@ -50,14 +50,14 @@
       sellWoodBtn: el('sellWoodBtn'), sellStoneBtn: el('sellStoneBtn'), sellVegBtn: el('sellVegBtn'), sellEggBtn: el('sellEggBtn'),
       buyChainsawBtn: el('buyChainsawBtn'), buyTrekkerBtn: el('buyTrekkerBtn'), buyMetalBtn: el('buyMetalBtn'), buyBrickBtn: el('buyBrickBtn'), buyGlassBtn: el('buyGlassBtn'), chainsawOwned: el('chainsawOwned'), trekkerOwned: el('trekkerOwned'),
       craftAxeBtn: el('craftAxeBtn'), craftHoeBtn: el('craftHoeBtn'), buildShedBtn: el('buildShedBtn'), buildSiloBtn: el('buildSiloBtn'), buildHouseBtn: el('buildHouseBtn'),
-      passiveList: el('passiveList'),
+      passiveList: el('passiveList'), dlcList: el('dlcList'),
       saveBtn: el('saveBtn'), exportBtn: el('exportBtn'), importBtn: el('importBtn'), resetBtn: el('resetBtn'), autosaveToggle: el('autosaveToggle'), muteToggle: el('muteToggle'), resetGameBtn: el('resetGameBtn'), saveInfo: el('saveInfo'),
     };
 
     const state = {
       resources: {
         gold: 0,
-        wood: 0, stone: 0, eggs: 0, veggies: 0, metalPlates: 0, bricks: 0, glass: 0,
+        wood: 0, stone: 0, eggs: 0, veggies: 0, milk: 0, pork: 0, metalPlates: 0, bricks: 0, glass: 0,
         seeds: {},
         crops: {},
         tools: { axe:false, hoe:false, chainsaw:false, trekker:false }
@@ -65,7 +65,7 @@
       garden: { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20, task:null },
       animals: { chickens: 0, eggsReady: 0 },
       buildings: { sheds: 0, silos: 0, house:false },
-      meta: { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, lastSiloWarn:0, log: [] }
+      meta: { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, lastSiloWarn:0, modules:{}, log: [] }
     };
 
     let autosaveTimer = null;
@@ -112,6 +112,151 @@
       return 250;
     };
 
+    const DLC_REGISTRY = Array.isArray(window.__HOMESTEAD_DLC_MODULES) ? window.__HOMESTEAD_DLC_MODULES.slice() : [];
+    const moduleEntries = new Map();
+    let moduleRenderHooks = [];
+    let moduleTickHooks = [];
+
+    function createModuleContext(entry){
+      const cleanup = [];
+      const ctx = {
+        id: entry.def.id,
+        state,
+        ICONS,
+        fmt,
+        clamp,
+        log,
+        document,
+        root: document.body,
+        $,
+        registerIcon(key, value){ if(key && value) ICONS[key] = value; },
+        addCleanup(fn){ if(typeof fn === 'function') cleanup.push(fn); },
+        addInventoryResource: (key, amount, opts) => addInventoryResource(key, amount, opts),
+        reserveInventory: (amount, opts) => reserveInventory(amount, opts),
+        render: () => render(),
+        warn,
+        toast,
+        warnInventoryFull,
+        warnSiloFull
+      };
+      Object.defineProperty(ctx, '_cleanup', { value: cleanup });
+      return ctx;
+    }
+
+    function runModuleCleanup(entry){
+      const cleanup = entry.ctx && entry.ctx._cleanup;
+      if(Array.isArray(cleanup)){
+        while(cleanup.length){
+          const fn = cleanup.pop();
+          try{ fn(); } catch(err){ console.warn([DLC:] cleanup faalde, err); }
+        }
+      }
+    }
+
+    function setupModulesRegistry(){
+      if(!state.meta.modules || typeof state.meta.modules !== 'object') state.meta.modules = {};
+      DLC_REGISTRY.forEach(def => {
+        const stored = Object.prototype.hasOwnProperty.call(state.meta.modules, def.id)
+          ? !!state.meta.modules[def.id]
+          : def.defaultEnabled !== false;
+        state.meta.modules[def.id] = stored;
+        moduleEntries.set(def.id, { def, enabled: stored, ctx: null, resetHook: null, teardownHook: null });
+      });
+    }
+
+    function activateModule(id, opts = {}){
+      const entry = moduleEntries.get(id);
+      if(!entry || entry.enabled) return;
+      entry.enabled = true;
+      state.meta.modules[id] = true;
+      const ctx = createModuleContext(entry);
+      entry.ctx = ctx;
+      try{
+        if(entry.def.registerIcon) entry.def.registerIcon(ctx);
+      } catch(err){
+        console.warn([DLC:] registerIcon faalde, err);
+      }
+      try{
+        if(entry.def.hooks && typeof entry.def.hooks.init === 'function') entry.def.hooks.init(ctx);
+      } catch(err){
+        console.error([DLC:] init faalde, err);
+      }
+      if(entry.def.hooks){
+        if(typeof entry.def.hooks.render === 'function'){
+          moduleRenderHooks.push({ id, run: () => {
+            try { entry.def.hooks.render(ctx); } catch(err){ console.error([DLC:] render faalde, err); }
+          }});
+        }
+        if(typeof entry.def.hooks.tick === 'function'){
+          moduleTickHooks.push({ id, run: (dt) => {
+            try { entry.def.hooks.tick(ctx, dt); } catch(err){ console.error([DLC:] tick faalde, err); }
+          }});
+        }
+        if(typeof entry.def.hooks.reset === 'function'){
+          entry.resetHook = (options) => {
+            try { entry.def.hooks.reset(ctx, options); } catch(err){ console.error([DLC:] reset faalde, err); }
+          };
+        } else {
+          entry.resetHook = null;
+        }
+        entry.teardownHook = (typeof entry.def.hooks.teardown === 'function') ? entry.def.hooks.teardown : null;
+      }
+      if(!opts.silent) render();
+    }
+
+    function deactivateModule(id, opts = {}){
+      const entry = moduleEntries.get(id);
+      if(!entry || !entry.enabled) return;
+      entry.enabled = false;
+      state.meta.modules[id] = false;
+      moduleRenderHooks = moduleRenderHooks.filter(h => h.id !== id);
+      moduleTickHooks = moduleTickHooks.filter(h => h.id !== id);
+      if(entry.teardownHook){
+        try { entry.teardownHook(entry.ctx); } catch(err){ console.error([DLC:] teardown faalde, err); }
+      }
+      runModuleCleanup(entry);
+      entry.ctx = null;
+      entry.resetHook = null;
+      entry.teardownHook = null;
+      if(!opts.silent) render();
+    }
+
+    function handleDlcToggle(event){
+      const target = event.target;
+      if(!target || target.type !== 'checkbox') return;
+      const id = target.getAttribute('data-dlc-id');
+      if(!id) return;
+      if(target.checked){
+        activateModule(id);
+      } else {
+        deactivateModule(id);
+      }
+    }
+
+    function renderModuleList(){
+      if(!$.dlcList) return;
+      if(moduleEntries.size === 0){
+        $.dlcList.innerHTML = '<p class="small">Geen modules gevonden.</p>';
+        return;
+      }
+      const fragments = [];
+      moduleEntries.forEach(entry => {
+        const def = entry.def;
+        const version = def.version ?  <span class="tiny">v</span> : '';
+        const description = def.description ? <div class="tiny"></div> : '';
+        fragments.push(<label class="small"><input type="checkbox" data-dlc-id=""> </label>);
+      });
+      $.dlcList.innerHTML = fragments.join('');
+    }
+
+    function applyInitialModules(){
+      moduleEntries.forEach((entry, id) => {
+        if(entry.enabled){
+          activateModule(id, { silent:true });
+        }
+      });
+    }
+
     function sumValues(obj = {}, filter) {
       if(typeof obj !== 'object' || !obj) return 0;
       const shouldInclude = typeof filter === 'function' ? filter : (() => true);
@@ -124,7 +269,8 @@
       const otherCrops = sumValues(r.crops, key => key !== 'basic');
       const seeds = sumValues(r.seeds);
       const materials = (r.metalPlates || 0) + (r.bricks || 0) + (r.glass || 0);
-      return (r.wood || 0) + (r.stone || 0) + (r.eggs || 0) + veggies + otherCrops + seeds + materials;
+      const livestockGoods = (r.milk || 0) + (r.pork || 0);
+      return (r.wood || 0) + (r.stone || 0) + (r.eggs || 0) + veggies + otherCrops + seeds + materials + livestockGoods;
     }
 
     function availableInventorySpace(){
@@ -363,6 +509,9 @@
 
       if($.eggsReadyLine) $.eggsReadyLine.textContent = `Eieren klaar: ${Math.floor(state.animals.eggsReady)}`;
       if($.animalStatus) $.animalStatus.textContent = state.animals.chickens > 0 ? `${state.animals.chickens} kip(pen)` : 'geen dieren';
+
+      renderModuleList();
+      moduleRenderHooks.forEach(h => h.run());
     }
 
     const timers = { chop: 0, forage: 0, gardenTask: null };
@@ -385,6 +534,7 @@
         addInventoryResource('wood', dt / 3, { silent:true });
       }
 
+      moduleTickHooks.forEach(h => h.run(dt));
       render();
     }
 
@@ -870,6 +1020,8 @@
       }
       if(!state.resources.crops) state.resources.crops = {};
       if(!state.resources.tools) state.resources.tools = { axe:false, hoe:false, chainsaw:false, trekker:false };
+      if(typeof state.resources.milk !== 'number') state.resources.milk = 0;
+      if(typeof state.resources.pork !== 'number') state.resources.pork = 0;
       if(typeof state.resources.metalPlates !== 'number') state.resources.metalPlates = 0;
       if(typeof state.resources.bricks !== 'number') state.resources.bricks = 0;
       if(typeof state.resources.glass !== 'number') state.resources.glass = 0;
@@ -894,10 +1046,11 @@
         state.resources.veggies = migratedVegCap;
       }
       if(!state.meta){
-        state.meta = { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, lastSiloWarn:0, log: [] };
+        state.meta = { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, lastSiloWarn:0, modules:{}, log: [] };
       } else {
         if(typeof state.meta.lastInventoryWarn !== 'number') state.meta.lastInventoryWarn = 0;
         if(typeof state.meta.lastSiloWarn !== 'number') state.meta.lastSiloWarn = 0;
+        if(!state.meta.modules || typeof state.meta.modules !== 'object') state.meta.modules = {};
       }
       if(typeof state.resources.gold !== 'number') state.resources.gold = 0;
     }
@@ -1004,6 +1157,11 @@
       state.meta.lastSave = 0;
       state.meta.lastInventoryWarn = 0;
       state.meta.lastSiloWarn = 0;
+      moduleEntries.forEach(entry => {
+        if(entry.enabled && typeof entry.resetHook === 'function'){
+          entry.resetHook({ hard:true });
+        }
+      });
       toast('Reset voltooid. Spel wordt opnieuw geladen...');
       log(`${ICONS.warning} Reset uitgevoerd, spel wordt opnieuw geladen.`);
       setTimeout(() => location.reload(), 400);
@@ -1093,6 +1251,13 @@
     function boot(){
       if($.version) $.version.textContent = 'v' + VERSION;
       load();
+      setupModulesRegistry();
+      if($.dlcList && !$.dlcList.__dlcBound){
+        $.dlcList.addEventListener('change', handleDlcToggle);
+        $.dlcList.__dlcBound = true;
+      }
+      applyInitialModules();
+      renderModuleList();
       offline();
       render();
       loop();
@@ -1106,6 +1271,8 @@
 
     boot();
 })();
+
+
 
 
 
