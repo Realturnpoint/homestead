@@ -1,5 +1,5 @@
 ﻿(function(){
-    const VERSION = '0.0.2';
+    const VERSION = '1.8.0';
     const SAVE_KEY = 'homestead-save-v1';
 
     // Safe DOM getter
@@ -9,25 +9,31 @@
     const seedsCatalog = Array.isArray(window.SEEDS) ? window.SEEDS : [];
     const SEED_BY_ID = (window.SEED_BY_ID && typeof window.SEED_BY_ID === 'object')
       ? window.SEED_BY_ID
-      : Object.fromEntries(seedsCatalog.map(seed => [seed.id, seed]));
+      : (() => {
+          const map = {};
+          for (const seed of seedsCatalog) {
+            map[seed.id] = seed;
+          }
+          return map;
+        })();
 
     const ICONS = Object.freeze({
-      gold: "🪙",
-      wood: "🪵",
-      stone: "🪨",
-      eggs: "🥚",
-      axe: "🪓",
-      chainsaw: "🪚",
-      tractor: "🚜",
-      hoe: "⛏️",
-      shed: "🛖",
-      house: "🏠",
-      chicken: "🐔",
-      seed: "🌱",
-      timer: "⏳",
-      warning: "⚠️"
+      gold: '🪙',
+      wood: '🪵',
+      stone: '🪨',
+      eggs: '🥚',
+      axe: '🪓',
+      chainsaw: '🪚',
+      tractor: '🚜',
+      hoe: '⛏️',
+      shed: '🛖',
+      house: '🏠',
+      chicken: '🐔',
+      seed: '🌱',
+      timer: '⏳',
+      warning: '⚠️',
+      broom: '🧹'
     });
-
     const $ = {
       version: el('version'), resources: el('resources'), log: el('log'), seedList: el('seedList'), cropList: el('cropList'),
       tabGame: el('tabGame'), tabMarket: el('tabMarket'), viewGame: el('viewGame'), viewMarket: el('viewMarket'),
@@ -39,7 +45,7 @@
       buyChainsawBtn: el('buyChainsawBtn'), buyTractorBtn: el('buyTractorBtn'), chainsawOwned: el('chainsawOwned'), tractorOwned: el('tractorOwned'),
       craftAxeBtn: el('craftAxeBtn'), craftHoeBtn: el('craftHoeBtn'), buildShedBtn: el('buildShedBtn'), buildHouseBtn: el('buildHouseBtn'),
       passiveList: el('passiveList'),
-      saveBtn: el('saveBtn'), exportBtn: el('exportBtn'), importBtn: el('importBtn'), resetBtn: el('resetBtn'), autosaveToggle: el('autosaveToggle'), muteToggle: el('muteToggle'), saveInfo: el('saveInfo'),
+      saveBtn: el('saveBtn'), exportBtn: el('exportBtn'), importBtn: el('importBtn'), resetBtn: el('resetBtn'), autosaveToggle: el('autosaveToggle'), muteToggle: el('muteToggle'), resetCookiesBtn: el('resetCookiesBtn'), saveInfo: el('saveInfo'),
     };
 
     const state = {
@@ -50,7 +56,7 @@
         crops: {},
         tools: { axe:false, hoe:false, chainsaw:false, tractor:false }
       },
-      garden: { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20 },
+      garden: { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20, task:null },
       animals: { chickens: 0, eggsReady: 0 },
       buildings: { shed:false, house:false },
       meta: { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, log: [] }
@@ -94,7 +100,7 @@
       if(!$.seedSelect) return;
       const owned = Object.entries(state.resources.seeds || {}).filter(([, qty]) => qty > 0);
       const current = $.seedSelect.value;
-      const options = ['<option value="" disabled selected>Kies zaad…</option>'];
+      const options = ['<option value="" disabled selected>Kies zaad...</option>'];
       for(const [id, qty] of owned){
         const meta = SEED_BY_ID[id];
         if(!meta) continue;
@@ -130,13 +136,23 @@
       }
 
       listPills(r.seeds, SEED_BY_ID, $.seedList);
-      const cropMeta = Object.fromEntries(seedsCatalog.map(seed => [seed.id, { icon: seed.icon, name: seed.crop }]));
+      const cropMeta = (() => {
+        const out = {};
+        for (const seed of seedsCatalog) {
+          out[seed.id] = { icon: seed.icon, name: seed.crop };
+        }
+        return out;
+      })();
       listPills(r.crops, cropMeta, $.cropList);
 
       if($.axeStatus) $.axeStatus.textContent = r.tools.chainsaw ? 'kettingzaag klaar' : (r.tools.axe ? 'bijl klaar' : 'geen bijl');
       if($.gardenStatus){
         const meta = g.plantId ? SEED_BY_ID[g.plantId] : null;
-        $.gardenStatus.textContent = g.planted && meta ? `${meta.name} groeit…` : (g.tilled ? 'klaar om te zaaien' : 'onbewerkt');
+        let status = 'onbewerkt';
+        if(g.planted && meta) status = `${meta.name} groeit...`;
+        else if(g.task === 'till') status = 'grond losmaken...';
+        else if(g.tilled) status = 'klaar om te zaaien';
+        $.gardenStatus.textContent = status;
       }
       if($.veggiesReadyLine){
         $.veggiesReadyLine.textContent = `Groei: ${g.planted ? Math.floor(g.growProgress * 100) : 0}%`;
@@ -170,13 +186,13 @@
       if($.animalStatus) $.animalStatus.textContent = state.animals.chickens > 0 ? `${state.animals.chickens} kip(pen)` : 'geen dieren';
     }
 
-    const timers = { chop: 0, forage: 0, gardenTask: 0 };
+    const timers = { chop: 0, forage: 0, gardenTask: null };
 
     function tick(dt){
       if(state.garden.planted){
         state.garden.growProgress = clamp(state.garden.growProgress + (dt / (state.garden.growTime || 20)), 0, 1);
         if($.gardenBar) $.gardenBar.style.width = (state.garden.growProgress * 100).toFixed(1) + '%';
-      } else if($.gardenBar){
+      } else if(!timers.gardenTask && $.gardenBar){
         $.gardenBar.style.width = '0%';
       }
 
@@ -247,6 +263,22 @@
       }
 
       tick(dt);
+
+      if(timers.gardenTask){
+        timers.gardenTask.remaining = clamp(timers.gardenTask.remaining - dt, 0, timers.gardenTask.duration);
+        if($.gardenBar){
+          const progress = 1 - (timers.gardenTask.remaining / timers.gardenTask.duration);
+          $.gardenBar.style.width = (progress * 100).toFixed(1) + '%';
+        }
+        if(timers.gardenTask.remaining === 0){
+          const onDone = timers.gardenTask.onDone;
+          timers.gardenTask = null;
+          if(typeof onDone === 'function'){
+            onDone();
+          }
+        }
+      }
+
       requestAnimationFrame(loop);
     }
 
@@ -294,27 +326,36 @@
     if($.chopBtn) $.chopBtn.addEventListener('click', () => {
       if(timers.chop === 0){
         timers.chop = chopDuration();
-        log(`${ICONS.wood} Zoeken naar hout…`);
+        log(`${ICONS.wood} Zoeken naar hout...`);
       }
     });
     if($.forageBtn) $.forageBtn.addEventListener('click', () => {
       if(timers.forage === 0){
         timers.forage = 6;
-        log(`${ICONS.seed} Je zoekt rond…`);
+        log(`${ICONS.seed} Je zoekt rond...`);
       }
     });
 
     if($.tillBtn) $.tillBtn.addEventListener('click', () => {
       if(!state.resources.tools.hoe) return warn('Je hebt een schoffel nodig.');
       if(state.garden.planted || state.garden.tilled) return warn('Tuin is al bezig of klaar om te zaaien.');
+      if(timers.gardenTask) return warn('Tuinactie bezig.');
       const duration = tillDuration();
       state.garden.tilled = false;
-      log(`${ICONS.hoe} Je spit de moestuin om…`);
-      setTimeout(() => {
-        state.garden.tilled = true;
-        log('De aarde is losgemaakt.');
-        render();
-      }, duration * 1000);
+      state.garden.task = 'till';
+      log(`${ICONS.hoe} Je spit de moestuin om...`);
+      timers.gardenTask = {
+        type: 'till',
+        duration,
+        remaining: duration,
+        onDone: () => {
+          state.garden.tilled = true;
+          state.garden.task = null;
+          log('De aarde is losgemaakt.');
+          render();
+        }
+      };
+      render();
     });
 
     if($.plantBtn) $.plantBtn.addEventListener('click', () => {
@@ -324,7 +365,7 @@
       if((state.resources.seeds[id] || 0) < 1) return warn('Je hebt dit zaad niet.');
       const meta = SEED_BY_ID[id];
       state.resources.seeds[id] -= 1;
-      log(`${ICONS.seed} Je begint met zaaien…`);
+      log(`${ICONS.seed} Je begint met zaaien...`);
       const duration = plantDuration();
       setTimeout(() => {
         state.garden.planted = true;
@@ -354,7 +395,7 @@
       if(id === 'basic'){
         state.resources.veggies = (state.resources.veggies || 0) + amount;
       }
-      state.garden = { tilled:false, planted:false, plantId:null, growProgress:0, growTime:meta.grow };
+      state.garden = { tilled:false, planted:false, plantId:null, growProgress:0, growTime:meta.grow, task:null };
       log(`${meta.icon || ICONS.seed} Je oogst ${meta.crop.toLowerCase()} (+${amount}).`);
       render();
     });
@@ -525,8 +566,9 @@
       if(!state.resources.crops) state.resources.crops = {};
       if(!state.resources.tools) state.resources.tools = { axe:false, hoe:false, chainsaw:false, tractor:false };
       if(state.resources.tools.pick) delete state.resources.tools.pick;
-      if(!state.garden) state.garden = { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20 };
+      if(!state.garden) state.garden = { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20, task:null };
       if(state.garden && state.garden.growTime == null) state.garden.growTime = 20;
+      if(state.garden && typeof state.garden.task === 'undefined') state.garden.task = null;
       if(state.garden && state.garden.plantId && !SEED_BY_ID[state.garden.plantId]){
         state.garden.plantId = 'basic';
       }
@@ -592,6 +634,12 @@
     if($.muteToggle) $.muteToggle.addEventListener('change', (event) => {
       state.meta.muted = !!event.target.checked;
     });
+    if($.resetCookiesBtn) $.resetCookiesBtn.addEventListener('click', () => {
+      if(confirm('Cookies wissen? Dit verwijdert websitecookies voor dit spel.')){
+        clearCookies();
+      }
+    });
+
 
     function toast(text){
       const pane = document.createElement('div');
@@ -600,6 +648,35 @@
       document.body.appendChild(pane);
       setTimeout(() => { pane.style.opacity = '0'; pane.style.transition = 'opacity .4s'; }, 1600);
       setTimeout(() => pane.remove(), 2100);
+    }
+
+    function clearCookies(){
+      const source = document.cookie;
+      if(!source){
+        toast('Geen cookies gevonden.');
+        log(`${ICONS.warning} Geen cookies gevonden.`);
+        return;
+      }
+      const cookies = source.split(';');
+      let cleared = 0;
+      cookies.forEach(entry => {
+        const eq = entry.indexOf('=');
+        const name = (eq > -1 ? entry.slice(0, eq) : entry).trim();
+        if(!name) return;
+        const expires = 'Thu, 01 Jan 1970 00:00:00 GMT';
+        document.cookie = `${name}=;expires=${expires};path=/`;
+        if(location.hostname){
+          document.cookie = `${name}=;expires=${expires};path=/;domain=${location.hostname}`;
+        }
+        cleared += 1;
+      });
+      if(cleared === 0){
+        toast('Geen cookies gevonden.');
+        log(`${ICONS.warning} Geen cookies gevonden.`);
+        return;
+      }
+      toast('Cookies gewist.');
+      log(`${ICONS.broom} Cookies gewist.`);
     }
 
     function warn(msg){
@@ -629,3 +706,24 @@
 
     boot();
 })();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

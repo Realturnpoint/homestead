@@ -1,4 +1,5 @@
-﻿// Globale seedcatalogus (30 soorten)
+
+// Globale seedcatalogus (30 soorten)
 (function(){
     const SEEDS = [
       {id:'basic',    icon:'🌱',  name:'Basiszaad',        crop:'Groente',         yield:[4,6],  grow:20},
@@ -32,7 +33,10 @@
       {id:'sunflower',icon:'🌻',  name:'Zonnebloemzaad',   crop:'Zonnebloemen',    yield:[1,3],  grow:27},
       {id:'barley',   icon:'🌾',  name:'Gerstzaad',        crop:'Gerst',           yield:[5,9],  grow:24},
     ];
-    const SEED_BY_ID = Object.fromEntries(SEEDS.map(seed => [seed.id, seed]));
+    const SEED_BY_ID = {};
+    for(const seed of SEEDS){
+      SEED_BY_ID[seed.id] = seed;
+    }
     window.SEEDS = SEEDS;
     window.SEED_BY_ID = SEED_BY_ID;
 })();
