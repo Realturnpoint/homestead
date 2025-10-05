@@ -18,21 +18,21 @@
         })();
 
     const ICONS = Object.freeze({
-      gold: '💰',
-      wood: '🌳',
-      stone: '⛏',
-      eggs: '🥚',
-      axe: '⚒',
-      chainsaw: '⚙',
-      trekker: '🚜',
-      hoe: '⚒',
-      shed: '🏠',
-      house: '🏡',
-      chicken: '🐔',
-      seed: '🌱',
-      timer: '⏲',
-      warning: '⚠',
-      broom: '✨'
+      gold: '&#x1F4B0;',
+      wood: '&#x1F333;',
+      stone: '&#x26CF;',
+      eggs: '&#x1F95A;',
+      axe: '&#x2692;',
+      chainsaw: '&#x2699;',
+      trekker: '&#x1F69C;',
+      hoe: '&#x1F6E0;',
+      shed: '&#x1F3E0;',
+      house: '&#x1F3E1;',
+      chicken: '&#x1F414;',
+      seed: '&#x1F331;',
+      timer: '&#x23F2;',
+      warning: '&#x26A0;',
+      broom: '&#x2728;'
     });
     const $ = {
       version: el('version'), resources: el('resources'), log: el('log'), seedList: el('seedList'), cropList: el('cropList'),
