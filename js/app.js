@@ -24,7 +24,7 @@
       eggs: '🥚',
       axe: '🪓',
       chainsaw: '🪚',
-      tractor: '🚜',
+      trekker: '🚜',
       hoe: '⛏️',
       shed: '🛖',
       house: '🏠',
@@ -44,7 +44,7 @@
       sellWoodRange: el('sellWoodRange'), sellStoneRange: el('sellStoneRange'), sellVegRange: el('sellVegRange'), sellEggRange: el('sellEggRange'),
       sellWoodCount: el('sellWoodCount'), sellStoneCount: el('sellStoneCount'), sellVegCount: el('sellVegCount'), sellEggCount: el('sellEggCount'),
       sellWoodBtn: el('sellWoodBtn'), sellStoneBtn: el('sellStoneBtn'), sellVegBtn: el('sellVegBtn'), sellEggBtn: el('sellEggBtn'),
-      buyChainsawBtn: el('buyChainsawBtn'), buyTractorBtn: el('buyTractorBtn'), chainsawOwned: el('chainsawOwned'), tractorOwned: el('tractorOwned'),
+      buyChainsawBtn: el('buyChainsawBtn'), buyTrekkerBtn: el('buyTrekkerBtn'), chainsawOwned: el('chainsawOwned'), trekkerOwned: el('trekkerOwned'),
       craftAxeBtn: el('craftAxeBtn'), craftHoeBtn: el('craftHoeBtn'), buildShedBtn: el('buildShedBtn'), buildHouseBtn: el('buildHouseBtn'),
       passiveList: el('passiveList'),
       saveBtn: el('saveBtn'), exportBtn: el('exportBtn'), importBtn: el('importBtn'), resetBtn: el('resetBtn'), autosaveToggle: el('autosaveToggle'), muteToggle: el('muteToggle'), resetCookiesBtn: el('resetCookiesBtn'), saveInfo: el('saveInfo'),
@@ -56,7 +56,7 @@
         wood: 0, stone: 0, eggs: 0, veggies: 0,
         seeds: {},
         crops: {},
-        tools: { axe:false, hoe:false, chainsaw:false, tractor:false }
+        tools: { axe:false, hoe:false, chainsaw:false, trekker:false }
       },
       garden: { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20, task:null },
       animals: { chickens: 0, eggsReady: 0 },
@@ -209,8 +209,8 @@
     }
 
     const chopDuration = () => state.resources.tools.chainsaw ? 3 : 5;
-    const tillDuration = () => state.resources.tools.tractor ? 2 : 4;
-    const plantDuration = () => state.resources.tools.tractor ? 1 : 3;
+    const tillDuration = () => state.resources.tools.trekker ? 2 : 4;
+    const plantDuration = () => state.resources.tools.trekker ? 1 : 3;
 
     function render(){
       const r = state.resources;
@@ -228,7 +228,7 @@
         <span class="pill">Opslag: <strong class="qty">${fmt(usedStorage)}</strong> / ${fmt(capacity)}${storageNote}</span>
         <span class="pill">${ICONS.axe} Bijl: <strong>${r.tools.axe ? 'ja' : 'nee'}</strong></span>
         <span class="pill">${ICONS.chainsaw} Kettingzaag: <strong>${r.tools.chainsaw ? 'ja' : 'nee'}</strong></span>
-        <span class="pill">${ICONS.tractor} Tractor: <strong>${r.tools.tractor ? 'ja' : 'nee'}</strong></span>
+        <span class="pill">${ICONS.trekker} Trekker: <strong>${r.tools.trekker ? 'ja' : 'nee'}</strong></span>
         <span class="pill">${ICONS.hoe} Schoffel: <strong>${r.tools.hoe ? 'ja' : 'nee'}</strong></span>
         <span class="pill">${ICONS.shed} Schuur: <strong>${state.buildings.shed ? 'ja' : 'nee'}</strong></span>
         <span class="pill">${ICONS.house} Huis: <strong>${state.buildings.house ? 'ja' : 'nee'}</strong></span>`;
@@ -261,7 +261,7 @@
       if($.plantBtn) $.plantBtn.disabled = !g.tilled;
 
       if($.chainsawOwned) $.chainsawOwned.textContent = state.resources.tools.chainsaw ? ' (in bezit)' : '';
-      if($.tractorOwned) $.tractorOwned.textContent = state.resources.tools.tractor ? ' (in bezit)' : '';
+      if($.trekkerOwned) $.trekkerOwned.textContent = state.resources.tools.trekker ? ' (in bezit)' : '';
       if($.collectEggsBtn) $.collectEggsBtn.disabled = Math.floor(state.animals.eggsReady) <= 0;
 
       renderSeedSelect();
@@ -270,7 +270,7 @@
       if($.passiveList){
         const passive = [];
         if(state.resources.tools.chainsaw) passive.push(`${ICONS.chainsaw} +1 hout / 3s`);
-        if(state.resources.tools.tractor) passive.push(`${ICONS.tractor} +1 groente / 30s (moestuintaken sneller)`);
+        if(state.resources.tools.trekker) passive.push(`${ICONS.trekker} +1 groente / 30s (moestuintaken sneller)`);
         if(state.animals.chickens > 0) passive.push(`${ICONS.chicken} ${state.animals.chickens} kip(pen): 1 ei / kip / 60s`);
         $.passiveList.innerHTML = passive.length ? passive.map(item => `<li>${item}</li>`).join('') : '<li class="small">Nog geen passieve bonussen</li>';
       }
@@ -298,7 +298,7 @@
       if(state.animals.chickens > 0){
         state.animals.eggsReady += dt * (state.animals.chickens / 60);
       }
-      if(state.resources.tools.tractor){
+      if(state.resources.tools.trekker){
         addInventoryResource('veggies', dt / 30, { silent:true });
       }
       if(state.resources.tools.chainsaw){
@@ -409,7 +409,7 @@
         if(temp.animals.chickens > 0){
           temp.animals.eggsReady += dt * (temp.animals.chickens / 60);
         }
-        if(temp.resources.tools && temp.resources.tools.tractor){
+        if(temp.resources.tools && temp.resources.tools.trekker){
           temp.resources.veggies += dt / 30;
         }
         if(temp.resources.tools && temp.resources.tools.chainsaw){
@@ -506,7 +506,7 @@
         state.garden.plantId = id;
         state.garden.growProgress = 0;
         state.garden.growTime = meta ? meta.grow : 20;
-        if(state.resources.tools.tractor){
+        if(state.resources.tools.trekker){
           state.garden.growTime = Math.max(10, Math.round(state.garden.growTime * 0.85));
         }
         log(`${meta?.icon || ICONS.seed} Je zaait ${meta ? meta.name.toLowerCase() : 'gewas'} (x1).`);
@@ -521,7 +521,7 @@
       if(!meta) return warn('Onbekend gewas.');
       const [minYield, maxYield] = meta.yield;
       let amount = Math.floor(minYield + Math.random() * (maxYield - minYield + 1));
-      if(state.resources.tools.tractor){
+      if(state.resources.tools.trekker){
         amount = Math.max(1, Math.floor(amount * 1.25));
       }
       const stored = reserveInventory(amount);
@@ -688,12 +688,12 @@
       render();
     });
 
-    if($.buyTractorBtn) $.buyTractorBtn.addEventListener('click', () => {
-      if(state.resources.tools.tractor) return warn('Je hebt al een tractor.');
+    if($.buyTrekkerBtn) $.buyTrekkerBtn.addEventListener('click', () => {
+      if(state.resources.tools.trekker) return warn('Je hebt al een trekker.');
       if(state.resources.gold < 300) return warn('Benodigd: 300 munten');
       state.resources.gold -= 300;
-      state.resources.tools.tractor = true;
-      log(`${ICONS.tractor} Je koopt een tractor! Moestuintaken worden sneller, opbrengst hoger en +1 groente / 30s.`);
+      state.resources.tools.trekker = true;
+      log(`${ICONS.trekker} Je koopt een trekker! Moestuintaken worden sneller, opbrengst hoger en +1 groente / 30s.`);
       render();
     });
 
@@ -725,7 +725,7 @@
         state.resources.seeds = { basic: state.resources.seeds };
       }
       if(!state.resources.crops) state.resources.crops = {};
-      if(!state.resources.tools) state.resources.tools = { axe:false, hoe:false, chainsaw:false, tractor:false };
+      if(!state.resources.tools) state.resources.tools = { axe:false, hoe:false, chainsaw:false, trekker:false };
       if(state.resources.tools.pick) delete state.resources.tools.pick;
       if(!state.garden) state.garden = { tilled:false, planted:false, plantId:null, growProgress:0, growTime:20, task:null };
       if(state.garden && state.garden.growTime == null) state.garden.growTime = 20;
@@ -800,9 +800,9 @@
     if($.muteToggle) $.muteToggle.addEventListener('change', (event) => {
       state.meta.muted = !!event.target.checked;
     });
-    if($.resetCookiesBtn) $.resetCookiesBtn.addEventListener('click', () => {
-      if(confirm('Cookies wissen? Dit verwijdert websitecookies voor dit spel.')){
-        clearCookies();
+    if($.resetCookiesBtn) $.resetCookiesBtn.addEventListener('click', async () => {
+      if(confirm('Cache wissen? Dit verwijdert lokale cachebestanden voor dit spel.')){
+        await clearCache();
       }
     });
 
@@ -816,33 +816,36 @@
       setTimeout(() => pane.remove(), 2100);
     }
 
-    function clearCookies(){
-      const source = document.cookie;
-      if(!source){
-        toast('Geen cookies gevonden.');
-        log(`${ICONS.warning} Geen cookies gevonden.`);
+    async function clearCache(){
+      if(!('caches' in window)){
+        toast('Cache API niet beschikbaar.');
+        log(`${ICONS.warning} Cache API niet beschikbaar.`);
         return;
       }
-      const cookies = source.split(';');
-      let cleared = 0;
-      cookies.forEach(entry => {
-        const eq = entry.indexOf('=');
-        const name = (eq > -1 ? entry.slice(0, eq) : entry).trim();
-        if(!name) return;
-        const expires = 'Thu, 01 Jan 1970 00:00:00 GMT';
-        document.cookie = `${name}=;expires=${expires};path=/`;
-        if(location.hostname){
-          document.cookie = `${name}=;expires=${expires};path=/;domain=${location.hostname}`;
+      try {
+        const keys = await caches.keys();
+        if(!keys || keys.length === 0){
+          toast('Geen cache gevonden.');
+          log(`${ICONS.warning} Geen cache gevonden.`);
+          return;
         }
-        cleared += 1;
-      });
-      if(cleared === 0){
-        toast('Geen cookies gevonden.');
-        log(`${ICONS.warning} Geen cookies gevonden.`);
-        return;
+        let cleared = 0;
+        await Promise.all(keys.map(async (key) => {
+          const success = await caches.delete(key);
+          if(success) cleared += 1;
+        }));
+        if(cleared === 0){
+          toast('Geen cache gevonden.');
+          log(`${ICONS.warning} Geen cache gevonden.`);
+          return;
+        }
+        toast('Cache gewist.');
+        log(`${ICONS.broom} Cache gewist (x${cleared}).`);
+      } catch(err){
+        console.warn('Kon cache niet wissen', err);
+        toast('Cache wissen mislukt.');
+        log(`${ICONS.warning} Cache wissen mislukt.`);
       }
-      toast('Cookies gewist.');
-      log(`${ICONS.broom} Cookies gewist.`);
     }
 
     function warn(msg){
