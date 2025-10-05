@@ -73,7 +73,7 @@
     // Helpers
     function escapeHtml(text){
       if(!text) return '';
-      return text.replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+      return text.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
     }
 
     function log(message){
@@ -123,6 +123,7 @@
         id: entry.def.id,
         state,
         ICONS,
+        icons: ICONS,
         fmt,
         clamp,
         log,
@@ -148,7 +149,7 @@
       if(Array.isArray(cleanup)){
         while(cleanup.length){
           const fn = cleanup.pop();
-          try{ fn(); } catch(err){ console.warn([DLC:] cleanup faalde, err); }
+          try{ fn(); } catch(err){ console.warn(`[DLC:${entry.def.id}] cleanup faalde`, err); }
         }
       }
     }
@@ -174,27 +175,27 @@
       try{
         if(entry.def.registerIcon) entry.def.registerIcon(ctx);
       } catch(err){
-        console.warn([DLC:] registerIcon faalde, err);
+        console.warn(`[DLC:${id}] registerIcon faalde`, err);
       }
       try{
         if(entry.def.hooks && typeof entry.def.hooks.init === 'function') entry.def.hooks.init(ctx);
       } catch(err){
-        console.error([DLC:] init faalde, err);
+        console.error(`[DLC:${id}] init faalde`, err);
       }
       if(entry.def.hooks){
         if(typeof entry.def.hooks.render === 'function'){
           moduleRenderHooks.push({ id, run: () => {
-            try { entry.def.hooks.render(ctx); } catch(err){ console.error([DLC:] render faalde, err); }
+            try { entry.def.hooks.render(ctx); } catch(err){ console.error(`[DLC:${id}] render faalde`, err); }
           }});
         }
         if(typeof entry.def.hooks.tick === 'function'){
           moduleTickHooks.push({ id, run: (dt) => {
-            try { entry.def.hooks.tick(ctx, dt); } catch(err){ console.error([DLC:] tick faalde, err); }
+            try { entry.def.hooks.tick(ctx, dt); } catch(err){ console.error(`[DLC:${id}] tick faalde`, err); }
           }});
         }
         if(typeof entry.def.hooks.reset === 'function'){
           entry.resetHook = (options) => {
-            try { entry.def.hooks.reset(ctx, options); } catch(err){ console.error([DLC:] reset faalde, err); }
+            try { entry.def.hooks.reset(ctx, options); } catch(err){ console.error(`[DLC:${id}] reset faalde`, err); }
           };
         } else {
           entry.resetHook = null;
@@ -212,7 +213,7 @@
       moduleRenderHooks = moduleRenderHooks.filter(h => h.id !== id);
       moduleTickHooks = moduleTickHooks.filter(h => h.id !== id);
       if(entry.teardownHook){
-        try { entry.teardownHook(entry.ctx); } catch(err){ console.error([DLC:] teardown faalde, err); }
+        try { entry.teardownHook(entry.ctx); } catch(err){ console.error(`[DLC:${id}] teardown faalde`, err); }
       }
       runModuleCleanup(entry);
       entry.ctx = null;
@@ -242,11 +243,15 @@
       const fragments = [];
       moduleEntries.forEach(entry => {
         const def = entry.def;
-        const version = def.version ?  <span class="tiny">v</span> : '';
-        const description = def.description ? <div class="tiny"></div> : '';
-        fragments.push(<label class="small"><input type="checkbox" data-dlc-id=""> </label>);
+        const version = def.version ? ` <span class="tiny">v${escapeHtml(def.version)}</span>` : '';
+        const description = def.description ? `<div class="tiny">${escapeHtml(def.description)}</div>` : '';
+        fragments.push(`<label class="small"><input type="checkbox" data-dlc-id="${escapeHtml(def.id)}"${entry.enabled ? ' checked' : ''}> ${escapeHtml(def.name || def.id)}${version}${description}</label>`);
       });
-      $.dlcList.innerHTML = fragments.join('');
+      const html = fragments.join('');
+      if($.dlcList.__lastHtml !== html){
+        $.dlcList.innerHTML = html;
+        $.dlcList.__lastHtml = html;
+      }
     }
 
     function applyInitialModules(){
@@ -1271,6 +1276,9 @@
 
     boot();
 })();
+
+
+
 
 
 
