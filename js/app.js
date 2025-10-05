@@ -47,7 +47,7 @@
       buyChainsawBtn: el('buyChainsawBtn'), buyTrekkerBtn: el('buyTrekkerBtn'), chainsawOwned: el('chainsawOwned'), trekkerOwned: el('trekkerOwned'),
       craftAxeBtn: el('craftAxeBtn'), craftHoeBtn: el('craftHoeBtn'), buildShedBtn: el('buildShedBtn'), buildHouseBtn: el('buildHouseBtn'),
       passiveList: el('passiveList'),
-      saveBtn: el('saveBtn'), exportBtn: el('exportBtn'), importBtn: el('importBtn'), resetBtn: el('resetBtn'), autosaveToggle: el('autosaveToggle'), muteToggle: el('muteToggle'), resetCookiesBtn: el('resetCookiesBtn'), saveInfo: el('saveInfo'),
+      saveBtn: el('saveBtn'), exportBtn: el('exportBtn'), importBtn: el('importBtn'), resetBtn: el('resetBtn'), autosaveToggle: el('autosaveToggle'), muteToggle: el('muteToggle'), resetGameBtn: el('resetGameBtn'), saveInfo: el('saveInfo'),
     };
 
     const state = {
@@ -63,6 +63,8 @@
       buildings: { shed:false, house:false },
       meta: { lastTick: Date.now(), lastSave: 0, autosave:true, muted:false, lastInventoryWarn:0, log: [] }
     };
+
+    let autosaveTimer = null;
 
     // Helpers
     function escapeHtml(text){
@@ -787,11 +789,9 @@
       };
       input.click();
     });
-    if($.resetBtn) $.resetBtn.addEventListener('click', () => {
-      if(confirm('Weet je zeker dat je opnieuw wilt beginnen?')){
-        localStorage.removeItem(SAVE_KEY);
-        location.reload();
-      }
+    if($.resetBtn) $.resetBtn.addEventListener('click', async () => {
+      if(!confirm('Weet je zeker dat je opnieuw wilt beginnen?')) return;
+      await resetGameProgress();
     });
 
     if($.autosaveToggle) $.autosaveToggle.addEventListener('change', (event) => {
@@ -800,10 +800,9 @@
     if($.muteToggle) $.muteToggle.addEventListener('change', (event) => {
       state.meta.muted = !!event.target.checked;
     });
-    if($.resetCookiesBtn) $.resetCookiesBtn.addEventListener('click', async () => {
-      if(confirm('Cache wissen? Dit verwijdert lokale cachebestanden voor dit spel.')){
-        await clearCache();
-      }
+    if($.resetGameBtn) $.resetGameBtn.addEventListener('click', async () => {
+      if(!confirm('Spel resetten? Alle voortgang wordt gewist en het spel start opnieuw.')) return;
+      await resetGameProgress();
     });
 
 
@@ -816,18 +815,54 @@
       setTimeout(() => pane.remove(), 2100);
     }
 
-    async function clearCache(){
+    async function resetGameProgress(){
+      state.meta.autosave = false;
+      if(autosaveTimer){
+        clearInterval(autosaveTimer);
+        autosaveTimer = null;
+      }
+      try {
+        window.removeEventListener('beforeunload', save);
+      } catch(_){}
+      try {
+        await clearCache({ silent:true });
+      } catch(err){
+        console.warn('Kon cache niet wissen tijdens reset', err);
+      }
+      try {
+        clearCookiesFallback(null, { silent:true });
+      } catch(err){
+        console.warn('Kon cookies niet wissen tijdens reset', err);
+      }
+      try {
+        localStorage.removeItem(SAVE_KEY);
+      } catch(err){
+        console.warn('Kon save niet verwijderen', err);
+      }
+      try {
+        sessionStorage.removeItem(SAVE_KEY);
+      } catch(_){}
+      state.meta.lastSave = 0;
+      toast('Reset voltooid. Spel wordt opnieuw geladen...');
+      log(`${ICONS.warning} Reset uitgevoerd, spel wordt opnieuw geladen.`);
+      setTimeout(() => location.reload(), 400);
+    }
+
+    async function clearCache(options = {}){
+      const silent = !!options.silent;
+      const fallback = (reason) => clearCookiesFallback(reason, options);
+      const notify = (icon, message) => {
+        if(silent) return;
+        if(message) toast(message);
+        if(icon && message) log(`${icon} ${message}`);
+      };
       if(!('caches' in window)){
-        toast('Cache API niet beschikbaar.');
-        log(`${ICONS.warning} Cache API niet beschikbaar.`);
-        return;
+        return { cacheCleared:false, fallbackUsed:true, cookiesCleared:fallback('Cache API niet beschikbaar') };
       }
       try {
         const keys = await caches.keys();
         if(!keys || keys.length === 0){
-          toast('Geen cache gevonden.');
-          log(`${ICONS.warning} Geen cache gevonden.`);
-          return;
+          return { cacheCleared:false, fallbackUsed:true, cookiesCleared:fallback('Geen cache gevonden') };
         }
         let cleared = 0;
         await Promise.all(keys.map(async (key) => {
@@ -835,17 +870,52 @@
           if(success) cleared += 1;
         }));
         if(cleared === 0){
-          toast('Geen cache gevonden.');
-          log(`${ICONS.warning} Geen cache gevonden.`);
-          return;
+          return { cacheCleared:false, fallbackUsed:true, cookiesCleared:fallback('Geen cache gevonden') };
         }
-        toast('Cache gewist.');
-        log(`${ICONS.broom} Cache gewist (x${cleared}).`);
+        const opslagSuffix = cleared === 1 ? '' : 'en';
+        const cacheSuffix = cleared === 1 ? '' : 's';
+        notify(ICONS.broom, `Cache gewist (${cleared} opslag${opslagSuffix}).`);
+        return { cacheCleared:true, fallbackUsed:false, cookiesCleared:false, cleared };
       } catch(err){
         console.warn('Kon cache niet wissen', err);
-        toast('Cache wissen mislukt.');
-        log(`${ICONS.warning} Cache wissen mislukt.`);
+        const cookiesCleared = fallback('Cache wissen mislukt');
+        if(!cookiesCleared) notify(ICONS.warning, 'Cache wissen mislukt.');
+        return { cacheCleared:false, fallbackUsed:true, cookiesCleared };
       }
+    }
+
+    function clearCookiesFallback(reason, options = {}){
+      const silent = !!options.silent;
+      const prefix = reason ? `${reason}. ` : '';
+      const source = document.cookie;
+      const notify = (icon, message) => {
+        if(silent) return;
+        toast(message);
+        log(`${icon} ${message}`);
+      };
+      if(!source){
+        notify(ICONS.warning, `${prefix}Geen cookies gevonden.`.trim());
+        return false;
+      }
+      const cookies = source.split(';');
+      let cleared = 0;
+      cookies.forEach(entry => {
+        const eq = entry.indexOf('=');
+        const name = (eq > -1 ? entry.slice(0, eq) : entry).trim();
+        if(!name) return;
+        const expires = 'Thu, 01 Jan 1970 00:00:00 GMT';
+        document.cookie = `${name}=;expires=${expires};path=/`;
+        if(location.hostname){
+          document.cookie = `${name}=;expires=${expires};path=/;domain=${location.hostname}`;
+        }
+        cleared += 1;
+      });
+      if(cleared === 0){
+        notify(ICONS.warning, `${prefix}Geen cookies gevonden.`.trim());
+        return false;
+      }
+      notify(ICONS.broom, `${prefix}Cookies gewist (${cleared}).`.trim());
+      return true;
     }
 
     function warn(msg){
@@ -866,7 +936,7 @@
       render();
       loop();
       if(state.meta.autosave){
-        setInterval(() => {
+        autosaveTimer = setInterval(() => {
           if(state.meta.autosave) save();
         }, 10000);
       }
